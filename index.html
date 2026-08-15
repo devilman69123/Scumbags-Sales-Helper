@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scumbags Sale Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="brand">
+          <p class="brand-mark" id="brand-mark">LA NOVA</p>
+          <h1>Scumbags Sale Tracker</h1>
+        </div>
+
+        <div class="store-switch" role="tablist" aria-label="Store">
+          <button
+            type="button"
+            class="store-btn active"
+            role="tab"
+            aria-selected="true"
+            data-store="lanova"
+            id="tab-lanova"
+          >
+            La Nova
+          </button>
+          <button
+            type="button"
+            class="store-btn"
+            role="tab"
+            aria-selected="false"
+            data-store="bisarnos"
+            id="tab-bisarnos"
+          >
+            Bisarnos
+          </button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel sale-panel">
+          <h2 class="panel-title">Sale details</h2>
+
+          <label class="field">
+            <span>Your name (employee)</span>
+            <input
+              id="employee"
+              type="text"
+              placeholder="e.g. Enzo Freeman"
+              autocomplete="name"
+            />
+          </label>
+
+          <label id="customer-field" class="field hidden">
+            <span>Customer</span>
+            <input
+              id="customer"
+              type="text"
+              placeholder="Customer's full RP name"
+              autocomplete="off"
+            />
+          </label>
+
+          <label id="license-field" class="field hidden">
+            <span>Customer license</span>
+            <input
+              id="customer-license"
+              type="text"
+              placeholder="FAVL-0-000000-A"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="field">
+            <span id="paid-label">Paid by customer</span>
+            <div class="price-input">
+              <span class="currency">$</span>
+              <input
+                id="paid"
+                type="text"
+                inputmode="decimal"
+                placeholder="Enter amount paid"
+              />
+            </div>
+          </label>
+
+          <div class="totals">
+            <div>
+              <span class="totals-label">Auto total</span>
+              <strong id="auto-total">$0</strong>
+            </div>
+            <div>
+              <span class="totals-label">Items selected</span>
+              <strong id="item-count">0</strong>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="copy-btn" class="btn primary">
+              Copy Log to Clipboard
+            </button>
+            <button type="button" id="clear-btn" class="btn ghost">
+              Clear sale
+            </button>
+          </div>
+
+          <p id="status" class="status" aria-live="polite"></p>
+
+          <div class="preview-block">
+            <div class="preview-header">
+              <h2 class="panel-title">Discord preview</h2>
+            </div>
+            <pre id="preview" class="preview">Enter your name and select items…</pre>
+          </div>
+        </section>
+
+        <div class="catalog-area">
+          <section class="panel menu-panel">
+            <div class="menu-header">
+              <h2 class="panel-title" id="menu-title">Menu</h2>
+              <input
+                id="menu-search"
+                type="search"
+                placeholder="Filter items…"
+                aria-label="Filter menu items"
+              />
+            </div>
+            <div id="menu" class="menu"></div>
+          </section>
+
+          <aside id="photo-clipboard" class="panel photo-clipboard hidden">
+            <div class="photo-clipboard-header">
+              <h2 class="panel-title">Photo clipboard</h2>
+              <button type="button" id="clear-photos-btn" class="text-btn">
+                Clear all
+              </button>
+            </div>
+            <div
+              id="photo-paste-zone"
+              class="photo-paste-zone"
+              tabindex="0"
+              role="group"
+              aria-label="Paste or add sale screenshots"
+            >
+              <strong>Paste screenshots here</strong>
+              <span>Click here and press Ctrl+V, or drag and drop</span>
+              <button type="button" id="choose-photos-btn" class="photo-choose-btn">
+                Choose files
+              </button>
+            </div>
+            <input
+              id="photo-input"
+              class="hidden"
+              type="file"
+              accept="image/*"
+              multiple
+            />
+            <div id="photo-list" class="photo-list"></div>
+            <small class="photo-note">Right-click a photo to enlarge.</small>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <div
+      id="photo-lightbox"
+      class="photo-window hidden"
+      hidden
+      role="dialog"
+      aria-label="Enlarged sale screenshot"
+    >
+      <div id="photo-window-bar" class="photo-window-bar">
+        <span class="photo-window-title">Photo preview</span>
+        <button
+          type="button"
+          id="photo-lightbox-close"
+          class="photo-window-close"
+          aria-label="Close enlarged photo"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="photo-window-body">
+        <img
+          id="photo-lightbox-image"
+          alt="Enlarged sale screenshot"
+          draggable="false"
+        />
+      </div>
+    </div>
+
+    <div
+      id="bisarnos-lock"
+      class="passcode-overlay hidden"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bisarnos-lock-title"
+    >
+      <form id="bisarnos-lock-form" class="passcode-panel">
+        <h2 id="bisarnos-lock-title" class="panel-title">Bisarnos lock</h2>
+        <p class="passcode-copy">Enter the 4-digit code to open this tab.</p>
+        <input
+          id="bisarnos-passcode"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="4"
+          autocomplete="one-time-code"
+          placeholder="••••"
+          aria-label="Bisarnos passcode"
+        />
+        <p id="bisarnos-lock-error" class="passcode-error" aria-live="polite"></p>
+        <div class="passcode-actions">
+          <button type="submit" class="btn primary">Unlock</button>
+          <button type="button" id="bisarnos-lock-cancel" class="btn ghost">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
