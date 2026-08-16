@@ -11,6 +11,13 @@ const STORES = {
     paidOptional: false,
     paidLabel: "Paid by customer",
     paidPlaceholder: "Enter amount paid",
+    quickCopy: [
+      {
+        id: "advert",
+        label: "Advert",
+        text: "/advertisement ❦ LA NOVA Restaurant ❦ A House of Respect and Tradition. Step inside and share a glass of wine, where every meal is served with heritage and dignity. Now Open in Little Italy, just outside City Center on the corner of 13th! | Jobs Available for $15,000 per 30 min worked! | Upon Full-Time employment, you will obtain company clothing and unique company car!",
+      },
+    ],
     menu: [
       {
         category: "Antipasti",
@@ -85,6 +92,19 @@ const STORES = {
     hasPricingModes: true,
     paidLabel: "Paid by customer",
     paidPlaceholder: "Enter amount paid",
+    quickCopy: [
+      {
+        id: "advert",
+        label: "Advert",
+        text: "/advertisement ✧ Bisarno Attachment Store ✧ Step into New York’s finest weapon attachment hub, right beside the deli across the street at the motel. Browse premium modifications. FAFL license & attachment stamp required. Now hiring, no experience needed! Employment comes with a unique company car! ✧",
+      },
+      {
+        id: "gov-form",
+        label: "Gov Form",
+        url: "https://docs.google.com/forms/d/e/1FAIpQLSf78LOyjb4BBFe9Lk-HEn2qaVu79-B0AlUUjGVrlt8YVsBC-w/viewform",
+        prefillGovForm: true,
+      },
+    ],
     menu: [
       {
         category: "Magazine / Kits",
@@ -252,6 +272,7 @@ const STORES = {
 const storeState = {
   lanova: {
     quantities: Object.create(null),
+    orderIdentifier: "",
     paid: "",
     search: "",
     paidManual: false,
@@ -260,6 +281,8 @@ const storeState = {
     quantities: Object.create(null),
     customer: "",
     customerLicense: "",
+    couponCode: "",
+    orderIdentifier: "",
     paid: "",
     search: "",
     paidManual: false,
@@ -268,21 +291,29 @@ const storeState = {
 };
 
 let activeStoreId = "lanova";
-const BISARNOS_PASSCODE = "1111";
+const BISARNOS_PASSCODE = "8008";
 let bisarnosUnlocked = false;
 
 const els = {
   brandMark: document.getElementById("brand-mark"),
+  quickCopy: document.getElementById("quick-copy"),
+  quickCopyHint: document.getElementById("quick-copy-hint"),
+  saleDetailsHint: document.getElementById("sale-details-hint"),
   employee: document.getElementById("employee"),
   customerField: document.getElementById("customer-field"),
   customer: document.getElementById("customer"),
   licenseField: document.getElementById("license-field"),
   customerLicense: document.getElementById("customer-license"),
+  couponField: document.getElementById("coupon-field"),
+  couponCode: document.getElementById("coupon-code"),
+  orderIdentifier: document.getElementById("order-identifier"),
   paid: document.getElementById("paid"),
   paidLabel: document.getElementById("paid-label"),
   autoTotal: document.getElementById("auto-total"),
   itemCount: document.getElementById("item-count"),
   copyBtn: document.getElementById("copy-btn"),
+  holdSaleBtn: document.getElementById("hold-sale-btn"),
+  prefillGovFormBtn: document.getElementById("prefill-gov-form-btn"),
   clearBtn: document.getElementById("clear-btn"),
   status: document.getElementById("status"),
   preview: document.getElementById("preview"),
@@ -290,11 +321,27 @@ const els = {
   menuTitle: document.getElementById("menu-title"),
   search: document.getElementById("menu-search"),
   photoClipboard: document.getElementById("photo-clipboard"),
+  bisarnosSide: document.getElementById("bisarnos-side"),
+  quickConfirm: document.getElementById("quick-confirm"),
+  quickConfirmToggle: document.getElementById("quick-confirm-toggle"),
+  quickConfirmBody: document.getElementById("quick-confirm-body"),
+  licenseGuide: document.getElementById("license-guide"),
+  inventoryStock: document.getElementById("inventory-stock"),
+  inventoryCaseGrid: document.getElementById("inventory-case-grid"),
+  inventoryCaseAssignmentTitle: document.getElementById(
+    "inventory-case-assignment-title",
+  ),
+  inventoryCaseAssignmentList: document.getElementById(
+    "inventory-case-assignment-list",
+  ),
   photoPasteZone: document.getElementById("photo-paste-zone"),
   choosePhotosBtn: document.getElementById("choose-photos-btn"),
   photoInput: document.getElementById("photo-input"),
   photoList: document.getElementById("photo-list"),
   clearPhotosBtn: document.getElementById("clear-photos-btn"),
+  heldSalesPanel: document.getElementById("held-sales-panel"),
+  heldSalesCount: document.getElementById("held-sales-count"),
+  heldSalesList: document.getElementById("held-sales-list"),
   photoLightbox: document.getElementById("photo-lightbox"),
   photoLightboxImage: document.getElementById("photo-lightbox-image"),
   photoLightboxClose: document.getElementById("photo-lightbox-close"),
@@ -384,12 +431,31 @@ function getSelectedLines() {
   return lines;
 }
 
-function getAutoTotal() {
-  return getSelectedLines().reduce((sum, line) => {
+function getLinesTotal(lines) {
+  return lines.reduce((sum, line) => {
     const unit = getItemUnitPrice(line.item, line.mode);
     if (unit == null) return sum;
     return sum + unit * line.qty;
   }, 0);
+}
+
+function getAutoSubtotal() {
+  return getLinesTotal(getSelectedLines());
+}
+
+function getCouponDiscount(subtotal = getAutoSubtotal()) {
+  if (
+    activeStoreId !== "bisarnos" ||
+    !isKnownCouponCode(els.couponCode.value)
+  ) {
+    return 0;
+  }
+  return Math.round(subtotal * 0.1 * 100) / 100;
+}
+
+function getAutoTotal() {
+  const subtotal = getAutoSubtotal();
+  return subtotal - getCouponDiscount(subtotal);
 }
 
 function formatPaidInput(amount) {
@@ -434,12 +500,19 @@ function buildLogText() {
           `x${line.qty} ${line.item.name} ${MODE_LABELS[line.mode]}`,
       )
       .join(", ");
-    return [
+    const output = [
       `Employee: ${name}`,
       `Customer: ${customer}`,
-      `Paid: ${formatMoneyWithCents(override)}`,
-      `Attachments: ${attachments}`,
-    ].join("\n");
+      `Paid: ${formatMoney(override)}`,
+    ];
+    const couponCode = els.couponCode.value.trim();
+    if (couponCode) {
+      const discount = getCouponDiscount();
+      const discountText = discount ? ` (-${formatMoney(discount)})` : "";
+      output.push(`Coupon: ${couponCode}${discountText}`);
+    }
+    output.push(`Attachments: ${attachments}`);
+    return output.join("\n");
   }
 
   const itemLines = lines.map((line) => {
@@ -457,11 +530,14 @@ function updatePreview() {
   const name = els.employee.value.trim();
   const lines = getSelectedLines();
   const auto = getAutoTotal();
+  const discount = getCouponDiscount();
   const count = lines.reduce((n, line) => n + line.qty, 0);
   const store = activeStore();
   const override = parsePaid(els.paid.value);
 
-  els.autoTotal.textContent = formatMoney(auto);
+  els.autoTotal.textContent = `${formatMoney(auto)}${
+    discount ? ` (-${formatMoney(discount)})` : ""
+  }`;
   els.itemCount.textContent = String(count);
 
   const text = buildLogText();
@@ -654,9 +730,13 @@ function clearSale() {
   if (activeStoreId === "bisarnos") {
     state.customer = "";
     state.customerLicense = "";
+    state.couponCode = "";
     els.customer.value = "";
     els.customerLicense.value = "";
+    els.couponCode.value = "";
   }
+  state.orderIdentifier = "";
+  els.orderIdentifier.value = "";
   state.paid = "";
   state.paidManual = false;
   els.paid.value = "";
@@ -722,7 +802,9 @@ function persistActiveStoreUi() {
   if (activeStoreId === "bisarnos") {
     state.customer = els.customer.value;
     state.customerLicense = els.customerLicense.value;
+    state.couponCode = els.couponCode.value;
   }
+  state.orderIdentifier = els.orderIdentifier.value;
   state.paid = els.paid.value;
   state.search = els.search.value;
 }
@@ -735,9 +817,19 @@ function applyStoreChrome() {
   els.paidLabel.textContent = store.paidLabel;
   els.paid.placeholder = store.paidPlaceholder;
   const isBisarnos = store.id === "bisarnos";
+  els.saleDetailsHint.classList.toggle("hidden", !isBisarnos);
   els.customerField.classList.toggle("hidden", !isBisarnos);
   els.licenseField.classList.toggle("hidden", !isBisarnos);
+  els.couponField.classList.toggle("hidden", !isBisarnos);
+  els.bisarnosSide.classList.remove("hidden");
   els.photoClipboard.classList.toggle("hidden", !isBisarnos);
+  els.quickConfirm.classList.toggle("hidden", !isBisarnos);
+  els.prefillGovFormBtn.classList.toggle("hidden", !isBisarnos);
+  els.licenseGuide.classList.toggle("hidden", !isBisarnos);
+  els.inventoryStock.classList.toggle("hidden", !isBisarnos);
+  renderQuickCopy();
+  renderPhotoClipboard();
+  renderHeldSales();
 
   els.storeButtons.forEach((btn) => {
     const selected = btn.dataset.store === activeStoreId;
@@ -746,8 +838,1528 @@ function applyStoreChrome() {
   });
 }
 
-function openBisarnosLock() {
-  els.bisarnosLockError.textContent = "";
+function renderQuickCopy() {
+  const buttons = activeStore().quickCopy || [];
+  els.quickCopy.innerHTML = "";
+  const hasCopyButtons = buttons.some((entry) => entry.text);
+  els.quickCopyHint.classList.toggle("hidden", !hasCopyButtons);
+  buttons.forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quick-copy-btn";
+    button.textContent = entry.label;
+    button.addEventListener("click", () => {
+      if (entry.url) openQuickLink(entry);
+      else copyQuickText(entry);
+    });
+    els.quickCopy.appendChild(button);
+  });
+
+  const extrasWrap = document.createElement("div");
+  extrasWrap.className = "extras-menu-wrap";
+  const extrasButton = document.createElement("button");
+  extrasButton.type = "button";
+  extrasButton.className = "quick-copy-btn extras-toggle";
+  extrasButton.textContent = "Extras";
+  extrasButton.setAttribute("aria-expanded", "false");
+
+  const extrasMenu = document.createElement("div");
+  extrasMenu.className = "extras-dropdown hidden";
+  [
+    ["Map", openMapTool],
+    ["Shipment Timer", openShipmentTimer],
+    ["Trade Prices", openTradePrices],
+    ["Under Table Sales", openUnderTableSales, "bisarnos"],
+    ["Notes", openNotesTool],
+    ["Photo Dump", openPhotoDumpTool],
+    ["Rules", openRulesTool],
+  ].forEach(([label, handler, requiresStore]) => {
+    if (requiresStore === "bisarnos" && !(activeStoreId === "bisarnos" && bisarnosUnlocked)) {
+      return;
+    }
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "extras-option";
+    option.textContent = label;
+    option.addEventListener("click", () => {
+      extrasMenu.classList.add("hidden");
+      extrasButton.setAttribute("aria-expanded", "false");
+      handler();
+    });
+    extrasMenu.appendChild(option);
+  });
+
+  extrasButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const opening = extrasMenu.classList.contains("hidden");
+    document
+      .querySelectorAll(".extras-dropdown")
+      .forEach((menu) => menu.classList.add("hidden"));
+    extrasMenu.classList.toggle("hidden", !opening);
+    extrasButton.setAttribute("aria-expanded", String(opening));
+  });
+  extrasWrap.append(extrasButton, extrasMenu);
+  els.quickCopy.appendChild(extrasWrap);
+
+  if (localStorage.getItem(SHIPMENT_TIMER_MINIMIZED_KEY) === "true") {
+    const timerStack = document.createElement("div");
+    timerStack.className = "minimized-timers";
+    getShipmentTimers().forEach((timer) => {
+      const minimizedTimer = document.createElement("button");
+      minimizedTimer.type = "button";
+      minimizedTimer.className = "minimized-timer";
+      minimizedTimer.setAttribute("aria-label", `Restore ${timer.label} timer`);
+      const label = document.createElement("span");
+      label.className = "minimized-timer-label";
+      label.textContent = timer.label;
+      const time = document.createElement("span");
+      time.className = "minimized-timer-time";
+      time.dataset.shipmentTimerDisplay = timer.id;
+      minimizedTimer.append(label, time);
+      minimizedTimer.addEventListener("click", () => {
+        stopShipmentBells();
+        openShipmentTimer();
+      });
+      timerStack.appendChild(minimizedTimer);
+    });
+    if (timerStack.childElementCount > 0) {
+      els.quickCopy.appendChild(timerStack);
+      ensureShipmentTimerInterval();
+      updateShipmentTimers();
+    }
+  }
+}
+
+const SHIPMENT_TIMER_KEY = "scumbags-shipment-timer-end";
+const SHIPMENT_TIMERS_KEY = "scumbags-shipment-timers";
+const SHIPMENT_TIMER_MINIMIZED_KEY = "scumbags-shipment-timer-minimized";
+const MAX_SHIPMENT_TIMERS = 4;
+let extraToolWindow = null;
+let extraToolTitle = null;
+let extraToolBody = null;
+let extraToolMinimize = null;
+let shipmentTimerInterval = null;
+let shipmentTimers = null;
+const finishedShipmentTimerIds = new Set();
+const ringingShipmentTimerIds = new Set();
+let bellRepeatInterval = null;
+let bellStopTimeout = null;
+let shipmentAudioContext = null;
+
+function getExtraToolWindow() {
+  if (extraToolWindow) return extraToolWindow;
+  extraToolWindow = document.createElement("section");
+  extraToolWindow.className = "extra-tool-window hidden";
+  extraToolWindow.setAttribute("role", "dialog");
+
+  const header = document.createElement("header");
+  header.className = "extra-tool-header";
+  extraToolTitle = document.createElement("strong");
+  const headerActions = document.createElement("div");
+  headerActions.className = "extra-tool-header-actions";
+  extraToolMinimize = document.createElement("button");
+  extraToolMinimize.type = "button";
+  extraToolMinimize.className = "extra-tool-minimize hidden";
+  extraToolMinimize.setAttribute("aria-label", "Minimize shipment timer");
+  extraToolMinimize.textContent = "—";
+  extraToolMinimize.addEventListener("click", () => {
+    localStorage.setItem(SHIPMENT_TIMER_MINIMIZED_KEY, "true");
+    extraToolWindow.classList.add("hidden");
+    renderQuickCopy();
+  });
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "extra-tool-close";
+  close.setAttribute("aria-label", "Close extra tool");
+  close.textContent = "✕";
+  close.addEventListener("click", () => extraToolWindow.classList.add("hidden"));
+  headerActions.append(extraToolMinimize, close);
+  header.append(extraToolTitle, headerActions);
+
+  extraToolBody = document.createElement("div");
+  extraToolBody.className = "extra-tool-body";
+  extraToolWindow.append(header, extraToolBody);
+  document.body.appendChild(extraToolWindow);
+
+  let dragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+  header.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest("button")) return;
+    dragging = true;
+    const rect = extraToolWindow.getBoundingClientRect();
+    offsetX = event.clientX - rect.left;
+    offsetY = event.clientY - rect.top;
+    extraToolWindow.style.transform = "none";
+    extraToolWindow.style.left = `${rect.left}px`;
+    extraToolWindow.style.top = `${rect.top}px`;
+    header.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const left = Math.max(
+      8,
+      Math.min(
+        event.clientX - offsetX,
+        window.innerWidth - extraToolWindow.offsetWidth - 8,
+      ),
+    );
+    const top = Math.max(
+      8,
+      Math.min(
+        event.clientY - offsetY,
+        window.innerHeight - extraToolWindow.offsetHeight - 8,
+      ),
+    );
+    extraToolWindow.style.left = `${left}px`;
+    extraToolWindow.style.top = `${top}px`;
+  });
+  const stopDrag = (event) => {
+    dragging = false;
+    try {
+      header.releasePointerCapture(event.pointerId);
+    } catch {}
+  };
+  header.addEventListener("pointerup", stopDrag);
+  header.addEventListener("pointercancel", stopDrag);
+
+  return extraToolWindow;
+}
+
+function openExtraTool(title) {
+  const windowEl = getExtraToolWindow();
+  extraToolTitle.textContent = title;
+  extraToolBody.innerHTML = "";
+  extraToolBody.onpaste = null;
+  extraToolBody.classList.toggle("trade-prices", title === "Trade Prices");
+  extraToolBody.classList.toggle(
+    "under-table-body",
+    title === "Under Table Sales",
+  );
+  extraToolBody.classList.toggle("notes-board-body", title === "Notes");
+  extraToolBody.classList.toggle("photo-dump-body", title === "Photo Dump");
+  extraToolBody.classList.toggle("rules-tool-body", title === "Rules");
+  windowEl.classList.toggle("map-viewer", title === "Map");
+  windowEl.classList.toggle("trade-prices-window", title === "Trade Prices");
+  windowEl.classList.toggle(
+    "under-table-window",
+    title === "Under Table Sales",
+  );
+  windowEl.classList.toggle("notes-board-window", title === "Notes");
+  windowEl.classList.toggle("photo-dump-window", title === "Photo Dump");
+  windowEl.classList.toggle("rules-tool-window", title === "Rules");
+  extraToolMinimize.classList.toggle("hidden", title !== "Shipment Timer");
+  windowEl.style.transform = "";
+  windowEl.style.left = "";
+  windowEl.style.top = "";
+  windowEl.classList.remove("hidden");
+  return extraToolBody;
+}
+
+function openMapTool() {
+  const body = openExtraTool("Map");
+  const maps = [
+    { src: "assets/map-city.png", label: "City locations map" },
+    { src: "assets/map-tunnels.png", label: "Tunnel entrances map" },
+    { src: "assets/map-stashes.png", label: "Stash locations map" },
+  ];
+  let activeIndex = 0;
+
+  const viewer = document.createElement("div");
+  viewer.className = "map-carousel";
+  const image = document.createElement("img");
+  image.className = "map-carousel-image";
+
+  const controls = document.createElement("div");
+  controls.className = "map-carousel-controls";
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "map-carousel-arrow";
+  previous.setAttribute("aria-label", "Previous map");
+  previous.textContent = "←";
+  const caption = document.createElement("span");
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "map-carousel-arrow";
+  next.setAttribute("aria-label", "Next map");
+  next.textContent = "→";
+
+  const showMap = (index) => {
+    activeIndex = (index + maps.length) % maps.length;
+    image.src = maps[activeIndex].src;
+    image.alt = maps[activeIndex].label;
+    caption.textContent = `${maps[activeIndex].label} · ${activeIndex + 1}/${maps.length}`;
+  };
+  previous.addEventListener("click", () => showMap(activeIndex - 1));
+  next.addEventListener("click", () => showMap(activeIndex + 1));
+
+  controls.append(previous, caption, next);
+  viewer.append(image, controls);
+  body.appendChild(viewer);
+  showMap(0);
+}
+
+function openTradePrices() {
+  const body = openExtraTool("Trade Prices");
+  const sections = [
+    {
+      title: "Buy Price (Before Laundry)",
+      rows: [
+        ["M", "$4,000"],
+        ["C", "$6,500"],
+        ["Q", "$4,000"],
+        ["H", "$4,000"],
+        ["L", "$4,250"],
+        ["W", "$5,000"],
+      ],
+    },
+    {
+      title: "Sell/Trade Price",
+      rows: [
+        ["1C", "$6,500"],
+        ["4C", "5W"],
+        ["2C", "3L"],
+        ["2C", "3H"],
+        ["2C", "3Q"],
+        ["2C", "3M + $400"],
+      ],
+    },
+    {
+      title: "NPC Sell Price (After Laundry)",
+      rows: [
+        ["M", "$5,600"],
+        ["Q", "$6,000"],
+        ["H", "$6,000"],
+        ["C", "$8,600"],
+        ["W", "$6,800"],
+        ["L", "$6,000"],
+      ],
+    },
+  ];
+
+  sections.forEach((sectionData) => {
+    const section = document.createElement("section");
+    section.className = "trade-price-section";
+    const title = document.createElement("h3");
+    title.textContent = sectionData.title;
+    section.appendChild(title);
+    sectionData.rows.forEach(([item, price]) => {
+      const row = document.createElement("div");
+      row.className = "trade-price-row";
+      const itemEl = document.createElement("strong");
+      itemEl.textContent = item;
+      const priceEl = document.createElement("span");
+      priceEl.textContent = price;
+      row.append(itemEl, priceEl);
+      section.appendChild(row);
+    });
+    body.appendChild(section);
+  });
+}
+
+function openUnderTableSales() {
+  const body = openExtraTool("Under Table Sales");
+  const prices = [
+    ["64 round drum", "$27,500"],
+    ["100 round beta-c mag (UZI)", "$35,000"],
+    ["80 round parabellum", "$30,000"],
+    ["50 round casket", "$20,000"],
+    ["100 round beta-c M16A2", "$35,000"],
+    ["M249 Bipod", "$2,500"],
+    ["10 round .40 Smith & Wesson", "$5,000"],
+    ["30 round standard mag (ARs)", "$10,000"],
+    ["30 round 7.62x39", "$10,000"],
+    ["75 round NATO drum", "$25,000"],
+    ["10 round 9x53mmR", "$5,000"],
+  ];
+
+  const markup = document.createElement("section");
+  markup.className = "under-table-section under-table-markup";
+  const markupTitle = document.createElement("h3");
+  markupTitle.textContent = "Default markup";
+  const markupText = document.createElement("p");
+  markupText.textContent =
+    "Any attachments sold under the table get a default markup of $2,000 per shipment and $1,250 per single.";
+  const noRequirements = document.createElement("strong");
+  noRequirements.textContent = "No license, no stamp.";
+  markup.append(markupTitle, markupText, noRequirements);
+
+  const pitch = document.createElement("section");
+  pitch.className = "under-table-section";
+  const pitchTitle = document.createElement("h3");
+  pitchTitle.textContent = "Attachment pitch";
+  const pitchText = document.createElement("p");
+  pitchText.textContent =
+    "Looking for off the catalogue attachments? Or attachments with no stamp or license? Not a problem, look no farther I can help you out with just about anything you need, just let me know what I can do for you.";
+  pitch.append(pitchTitle, pitchText);
+
+  const sheet = document.createElement("section");
+  sheet.className = "under-table-section";
+  const sheetHeader = document.createElement("div");
+  sheetHeader.className = "under-table-sheet-header";
+  const sheetTitle = document.createElement("h3");
+  sheetTitle.textContent = "Illegal attachment sales sheet";
+  const shipmentOnly = document.createElement("strong");
+  shipmentOnly.textContent = "SHIPMENTS ONLY!!";
+  sheetHeader.append(sheetTitle, shipmentOnly);
+  sheet.appendChild(sheetHeader);
+
+  const list = document.createElement("div");
+  list.className = "under-table-price-list";
+  prices.forEach(([item, price]) => {
+    const row = document.createElement("div");
+    row.className = "under-table-price-row";
+    const itemEl = document.createElement("span");
+    itemEl.textContent = item;
+    const priceEl = document.createElement("strong");
+    priceEl.textContent = price;
+    row.append(itemEl, priceEl);
+    list.appendChild(row);
+  });
+  sheet.appendChild(list);
+  body.append(markup, pitch, sheet);
+}
+
+const NOTES_STORAGE_KEY = "scumbags-helper-notes";
+const NOTE_COLORS = ["#f8e58b", "#f3b8c8", "#a9d9ef", "#bfe3ae", "#f6c68b"];
+let helperNotes = null;
+
+function normalizeNoteColor(value) {
+  return NOTE_COLORS.includes(value) ? value : NOTE_COLORS[0];
+}
+
+function getHelperNotes() {
+  if (helperNotes) return helperNotes;
+  try {
+    const saved = JSON.parse(localStorage.getItem(NOTES_STORAGE_KEY) || "[]");
+    helperNotes = Array.isArray(saved)
+      ? saved
+          .filter((note) => note && note.id)
+          .map((note) => ({
+            id: String(note.id),
+            label: String(note.label || ""),
+            color: normalizeNoteColor(note.color),
+            text: String(note.text || ""),
+            createdAt: Number(note.createdAt) || Date.now(),
+          }))
+      : [];
+  } catch {
+    helperNotes = [];
+  }
+  return helperNotes;
+}
+
+function saveHelperNotes() {
+  localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(getHelperNotes()));
+}
+
+function addHelperNote() {
+  const note = {
+    id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    label: "",
+    color: NOTE_COLORS[getHelperNotes().length % NOTE_COLORS.length],
+    text: "",
+    createdAt: Date.now(),
+  };
+  getHelperNotes().push(note);
+  saveHelperNotes();
+  renderNotesBoard(note.id);
+}
+
+function removeHelperNote(noteId) {
+  helperNotes = getHelperNotes().filter((note) => note.id !== noteId);
+  saveHelperNotes();
+  renderNotesBoard();
+}
+
+function renderNotesBoard(focusNoteId = "") {
+  if (!extraToolBody || extraToolTitle?.textContent !== "Notes") return;
+  extraToolBody.innerHTML = "";
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "notes-board-toolbar";
+  const count = document.createElement("span");
+  const notes = getHelperNotes();
+  count.textContent = `${notes.length} note${notes.length === 1 ? "" : "s"}`;
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "notes-add";
+  add.setAttribute("aria-label", "Add note");
+  add.textContent = "+";
+  add.addEventListener("click", addHelperNote);
+  toolbar.append(count, add);
+
+  const grid = document.createElement("div");
+  grid.className = "notes-grid";
+  notes
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .forEach((note, index) => {
+      const card = document.createElement("article");
+      card.className = "post-it-note";
+      card.style.background = note.color;
+      card.style.transform = index % 2 === 0 ? "rotate(-0.5deg)" : "rotate(0.6deg)";
+
+      const header = document.createElement("div");
+      header.className = "post-it-header";
+      const label = document.createElement("input");
+      label.type = "text";
+      label.maxLength = 40;
+      label.placeholder = "Label";
+      label.value = note.label;
+      label.setAttribute("aria-label", "Note label");
+      const swatches = document.createElement("div");
+      swatches.className = "post-it-swatches";
+      NOTE_COLORS.forEach((color) => {
+        const swatch = document.createElement("button");
+        swatch.type = "button";
+        swatch.className = "post-it-swatch";
+        swatch.style.background = color;
+        swatch.title = "Set note colour";
+        swatch.setAttribute("aria-label", "Set note colour");
+        if (color === note.color) swatch.classList.add("active");
+        swatch.addEventListener("click", () => {
+          note.color = color;
+          card.style.background = color;
+          swatches
+            .querySelectorAll(".post-it-swatch")
+            .forEach((el) => el.classList.toggle("active", el === swatch));
+          saveHelperNotes();
+        });
+        swatches.appendChild(swatch);
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "post-it-remove";
+      remove.setAttribute("aria-label", "Remove note");
+      remove.textContent = "✕";
+      remove.addEventListener("click", () => removeHelperNote(note.id));
+      header.append(label, remove);
+
+      const text = document.createElement("textarea");
+      text.maxLength = 1000;
+      text.placeholder = "Write a note…";
+      text.value = note.text;
+      text.setAttribute("aria-label", "Note text");
+
+      label.addEventListener("input", () => {
+        note.label = label.value;
+        saveHelperNotes();
+      });
+      text.addEventListener("input", () => {
+        note.text = text.value;
+        saveHelperNotes();
+      });
+
+      card.append(header, swatches, text);
+      grid.appendChild(card);
+      if (note.id === focusNoteId) {
+        requestAnimationFrame(() => label.focus());
+      }
+    });
+
+  if (notes.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "notes-empty";
+    empty.textContent = "Click + to add your first note.";
+    grid.appendChild(empty);
+  }
+
+  extraToolBody.append(toolbar, grid);
+}
+
+function openNotesTool() {
+  openExtraTool("Notes");
+  renderNotesBoard();
+}
+
+const PHOTO_DUMP_STORE_NAME = "photo-dump";
+let photoDumpRecords = null;
+let photoDumpObjectUrls = [];
+
+async function runPhotoDumpTransaction(mode, operation) {
+  const db = await openPhotoDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PHOTO_DUMP_STORE_NAME, mode);
+    const store = transaction.objectStore(PHOTO_DUMP_STORE_NAME);
+    const request = operation(store);
+    let result;
+    request.onsuccess = () => {
+      result = request.result;
+    };
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+}
+
+async function loadPhotoDump() {
+  if (photoDumpRecords) return;
+  photoDumpRecords = await runPhotoDumpTransaction("readonly", (store) =>
+    store.getAll(),
+  );
+}
+
+async function addPhotoDumpImages(files) {
+  const images = Array.from(files || []).filter((file) =>
+    file.type.startsWith("image/"),
+  );
+  if (images.length === 0) return;
+
+  try {
+    await loadPhotoDump();
+    for (const image of images) {
+      const record = {
+        id: makePhotoId(),
+        label: "",
+        blob: image,
+        createdAt: Date.now(),
+      };
+      await runPhotoDumpTransaction("readwrite", (store) => store.put(record));
+      photoDumpRecords.push(record);
+    }
+    renderPhotoDump();
+  } catch {
+    setStatus("Could not save the Photo Dump image.", true);
+  }
+}
+
+async function updatePhotoDumpLabel(record, label) {
+  record.label = label;
+  try {
+    await runPhotoDumpTransaction("readwrite", (store) => store.put(record));
+  } catch {
+    setStatus("Could not save the photo label.", true);
+  }
+}
+
+async function removePhotoDumpImage(id) {
+  try {
+    await runPhotoDumpTransaction("readwrite", (store) => store.delete(id));
+    photoDumpRecords = (photoDumpRecords || []).filter(
+      (record) => record.id !== id,
+    );
+    renderPhotoDump();
+  } catch {
+    setStatus("Could not remove the Photo Dump image.", true);
+  }
+}
+
+function renderPhotoDump() {
+  if (!extraToolBody || extraToolTitle?.textContent !== "Photo Dump") return;
+  photoDumpObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  photoDumpObjectUrls = [];
+  extraToolBody.innerHTML = "";
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "photo-dump-toolbar";
+  const records = (photoDumpRecords || [])
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const count = document.createElement("span");
+  count.textContent = `${records.length} photo${records.length === 1 ? "" : "s"} · Paste anywhere in this window`;
+
+  const upload = document.createElement("label");
+  upload.className = "photo-dump-upload";
+  upload.textContent = "Upload";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/*";
+  fileInput.multiple = true;
+  fileInput.addEventListener("change", () =>
+    addPhotoDumpImages(fileInput.files),
+  );
+  upload.appendChild(fileInput);
+  toolbar.append(count, upload);
+
+  const grid = document.createElement("div");
+  grid.className = "photo-dump-grid";
+  records.forEach((record) => {
+    const card = document.createElement("article");
+    card.className = "photo-dump-card";
+
+    const header = document.createElement("div");
+    header.className = "photo-dump-card-header";
+    const label = document.createElement("input");
+    label.type = "text";
+    label.maxLength = 50;
+    label.placeholder = "Label";
+    label.value = record.label || "";
+    label.setAttribute("aria-label", "Photo label");
+    label.addEventListener("input", () =>
+      updatePhotoDumpLabel(record, label.value),
+    );
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "photo-dump-remove";
+    remove.setAttribute("aria-label", "Remove photo");
+    remove.textContent = "✕";
+    remove.addEventListener("click", () => removePhotoDumpImage(record.id));
+    header.append(label, remove);
+
+    const url = URL.createObjectURL(record.blob);
+    photoDumpObjectUrls.push(url);
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = record.label || "Photo Dump image";
+    image.draggable = false;
+    image.title = "Click to enlarge";
+    image.addEventListener("click", () => openPhotoLightbox(url));
+    card.append(header, image);
+    grid.appendChild(card);
+  });
+
+  if (records.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "photo-dump-empty";
+    empty.textContent = "Paste a photo here or click Upload.";
+    grid.appendChild(empty);
+  }
+
+  extraToolBody.append(toolbar, grid);
+}
+
+async function openPhotoDumpTool() {
+  const body = openExtraTool("Photo Dump");
+  body.onpaste = (event) => {
+    const images = Array.from(event.clipboardData?.files || []).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (images.length === 0) return;
+    event.preventDefault();
+    addPhotoDumpImages(images);
+  };
+  try {
+    await loadPhotoDump();
+    renderPhotoDump();
+  } catch {
+    body.innerHTML =
+      '<p class="photo-dump-empty">Photo Dump storage is unavailable in this browser.</p>';
+  }
+}
+
+function openRulesTool() {
+  const body = openExtraTool("Rules");
+  const documents = Array.isArray(window.DIVERGE_RULES)
+    ? window.DIVERGE_RULES
+    : [];
+  let activeTopic = "";
+
+  const form = document.createElement("form");
+  form.className = "rules-search-form";
+  const input = document.createElement("input");
+  input.type = "search";
+  input.placeholder = "Search rules, e.g. FearRP or mugging";
+  input.setAttribute("aria-label", "Search rules");
+  const search = document.createElement("button");
+  search.type = "submit";
+  search.textContent = "Search";
+  form.append(input, search);
+
+  const note = document.createElement("p");
+  note.className = "rules-search-note";
+  note.textContent = "Searches the rule text only. Results appear below.";
+
+  const filters = document.createElement("div");
+  filters.className = "rules-topic-links";
+  const topicButtons = [];
+  const allButton = document.createElement("button");
+  allButton.type = "button";
+  allButton.textContent = "All rules";
+  allButton.classList.add("active");
+  filters.appendChild(allButton);
+  topicButtons.push({ button: allButton, title: "" });
+
+  documents.forEach((ruleDoc) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = ruleDoc.title
+      .replace("1990's Mafia Roleplay: ", "")
+      .replace("Diverge Networks: ", "");
+    filters.appendChild(button);
+    topicButtons.push({ button, title: ruleDoc.title });
+  });
+
+  const summary = document.createElement("p");
+  summary.className = "rules-results-summary";
+  const results = document.createElement("div");
+  results.className = "rules-results";
+
+  const appendHighlightedText = (element, text, tokens) => {
+    const pattern = new RegExp(
+      `(${tokens
+        .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("|")})`,
+      "gi",
+    );
+    String(text)
+      .split(pattern)
+      .filter(Boolean)
+      .forEach((part) => {
+        if (tokens.some((token) => part.toLowerCase() === token)) {
+          const mark = document.createElement("mark");
+          mark.textContent = part;
+          element.appendChild(mark);
+        } else {
+          element.appendChild(document.createTextNode(part));
+        }
+      });
+  };
+
+  const renderResults = () => {
+    results.innerHTML = "";
+    const query = input.value.trim().toLowerCase();
+    const tokens = [...new Set(query.split(/\s+/).filter(Boolean))];
+
+    if (documents.length === 0) {
+      summary.textContent = "";
+      results.innerHTML =
+        '<p class="rules-empty">The local rules data could not be loaded.</p>';
+      return;
+    }
+    if (tokens.length === 0) {
+      summary.textContent = "";
+      results.innerHTML =
+        '<p class="rules-empty">Type a keyword or phrase to look up a rule.</p>';
+      return;
+    }
+
+    const matches = [];
+    documents
+      .filter((ruleDoc) => !activeTopic || ruleDoc.title === activeTopic)
+      .forEach((ruleDoc) => {
+        ruleDoc.sections.forEach((section) => {
+          section.paragraphs.forEach((paragraph) => {
+            const haystack =
+              `${ruleDoc.title} ${section.heading} ${paragraph}`.toLowerCase();
+            if (tokens.every((token) => haystack.includes(token))) {
+              matches.push({ ruleDoc, section, paragraph });
+            }
+          });
+        });
+      });
+
+    const shown = matches.slice(0, 60);
+    summary.textContent =
+      matches.length === 0
+        ? "No matching rules found."
+        : `${matches.length} matching rule passage${matches.length === 1 ? "" : "s"}${matches.length > shown.length ? ` · showing first ${shown.length}` : ""}`;
+
+    shown.forEach(({ ruleDoc, section, paragraph }) => {
+      const card = document.createElement("article");
+      card.className = "rules-result";
+      const heading = document.createElement("div");
+      heading.className = "rules-result-heading";
+      const topic = document.createElement("strong");
+      topic.textContent = ruleDoc.title;
+      const sectionName = document.createElement("span");
+      sectionName.textContent = section.heading;
+      heading.append(topic, sectionName);
+
+      const text = document.createElement("p");
+      appendHighlightedText(text, paragraph, tokens);
+
+      const source = document.createElement("a");
+      source.href = ruleDoc.sourceUrl;
+      source.rel = "noopener noreferrer";
+      source.textContent = "Official source";
+      source.addEventListener("click", (event) => {
+        event.preventDefault();
+        window.open(
+          ruleDoc.sourceUrl,
+          "diverge-rules",
+          "popup=yes,width=1040,height=780,resizable=yes,scrollbars=yes",
+        );
+      });
+      card.append(heading, text, source);
+      results.appendChild(card);
+    });
+  };
+
+  topicButtons.forEach(({ button, title }) => {
+    button.addEventListener("click", () => {
+      activeTopic = title;
+      topicButtons.forEach((entry) =>
+        entry.button.classList.toggle("active", entry.title === activeTopic),
+      );
+      renderResults();
+      input.focus();
+    });
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    renderResults();
+  });
+  input.addEventListener("input", renderResults);
+
+  body.append(form, note, filters, summary, results);
+  renderResults();
+  requestAnimationFrame(() => input.focus());
+}
+
+function formatTimerRemaining(milliseconds) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getShipmentTimers() {
+  if (shipmentTimers) return shipmentTimers;
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHIPMENT_TIMERS_KEY) || "[]");
+    shipmentTimers = Array.isArray(saved)
+      ? saved
+          .filter((timer) => timer && timer.id && Number(timer.end))
+          .slice(0, MAX_SHIPMENT_TIMERS)
+          .map((timer, index) => ({
+            id: String(timer.id),
+            label: String(timer.label || `Shipment ${index + 1}`).slice(0, 30),
+            end: Number(timer.end),
+          }))
+      : [];
+  } catch {
+    shipmentTimers = [];
+  }
+
+  // Old single-timer format.
+  const legacyEnd = Number(localStorage.getItem(SHIPMENT_TIMER_KEY)) || 0;
+  if (shipmentTimers.length === 0 && legacyEnd > Date.now()) {
+    shipmentTimers.push({
+      id: `shipment-${Date.now()}`,
+      label: "Shipment 1",
+      end: legacyEnd,
+    });
+  }
+  localStorage.removeItem(SHIPMENT_TIMER_KEY);
+  saveShipmentTimers();
+  return shipmentTimers;
+}
+
+function saveShipmentTimers() {
+  if (!shipmentTimers) return;
+  localStorage.setItem(SHIPMENT_TIMERS_KEY, JSON.stringify(shipmentTimers));
+}
+
+function updateShipmentTimers() {
+  const now = Date.now();
+  getShipmentTimers().forEach((timer) => {
+    const remaining = timer.end - now;
+    document
+      .querySelectorAll("[data-shipment-timer-display]")
+      .forEach((display) => {
+        if (display.dataset.shipmentTimerDisplay !== timer.id) return;
+        display.textContent =
+          remaining > 0 ? formatTimerRemaining(remaining) : "00:00";
+        display.classList.toggle("finished", remaining <= 0);
+        display.closest(".minimized-timer, .shipment-timer-row")?.classList.toggle(
+          "finished",
+          remaining <= 0,
+        );
+      });
+
+    if (remaining <= 0 && !finishedShipmentTimerIds.has(timer.id)) {
+      finishedShipmentTimerIds.add(timer.id);
+      startShipmentBell(timer.id);
+      setStatus(`${timer.label} timer finished.`);
+    }
+  });
+}
+
+function prepareShipmentBell() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  if (!shipmentAudioContext) shipmentAudioContext = new AudioContextClass();
+  if (shipmentAudioContext.state === "suspended") {
+    shipmentAudioContext.resume().catch(() => {});
+  }
+}
+
+function playShipmentBell() {
+  if (!shipmentAudioContext || shipmentAudioContext.state !== "running") return;
+  const start = shipmentAudioContext.currentTime;
+  [880, 1174.66, 1567.98].forEach((frequency, index) => {
+    const oscillator = shipmentAudioContext.createOscillator();
+    const gain = shipmentAudioContext.createGain();
+    oscillator.type = index === 0 ? "sine" : "triangle";
+    oscillator.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.0001, start + index * 0.11);
+    gain.gain.exponentialRampToValueAtTime(0.16, start + index * 0.11 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + index * 0.11 + 0.55);
+    oscillator.connect(gain);
+    gain.connect(shipmentAudioContext.destination);
+    oscillator.start(start + index * 0.11);
+    oscillator.stop(start + index * 0.11 + 0.58);
+  });
+}
+
+function startShipmentBell(timerId) {
+  ringingShipmentTimerIds.add(timerId);
+  playShipmentBell();
+  if (!bellRepeatInterval) {
+    bellRepeatInterval = window.setInterval(playShipmentBell, 1200);
+  }
+  if (bellStopTimeout) window.clearTimeout(bellStopTimeout);
+  bellStopTimeout = window.setTimeout(stopShipmentBells, 10000);
+  renderShipmentBellControl();
+}
+
+function stopShipmentBells() {
+  ringingShipmentTimerIds.clear();
+  if (bellRepeatInterval) window.clearInterval(bellRepeatInterval);
+  if (bellStopTimeout) window.clearTimeout(bellStopTimeout);
+  bellRepeatInterval = null;
+  bellStopTimeout = null;
+  renderShipmentBellControl();
+}
+
+function renderShipmentBellControl() {
+  document.querySelectorAll("[data-stop-shipment-bells]").forEach((button) => {
+    button.classList.toggle("hidden", ringingShipmentTimerIds.size === 0);
+  });
+}
+
+function ensureShipmentTimerInterval() {
+  if (!shipmentTimerInterval) {
+    shipmentTimerInterval = window.setInterval(updateShipmentTimers, 1000);
+  }
+}
+
+function startShipmentTimer(label, minutes) {
+  const requested = Number(minutes);
+  if (!Number.isFinite(requested) || requested <= 0) {
+    setStatus("Enter a shipment timer between 1 and 180 minutes.", true);
+    return;
+  }
+  const timers = getShipmentTimers();
+  if (timers.length >= MAX_SHIPMENT_TIMERS) {
+    setStatus("A maximum of 4 shipment timers can run at once.", true);
+    return;
+  }
+  const duration = Math.max(1, Math.min(180, requested));
+  prepareShipmentBell();
+  const timer = {
+    id: `shipment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    label:
+      String(label || "").trim().slice(0, 30) ||
+      `Shipment ${timers.length + 1}`,
+    end: Date.now() + duration * 60 * 1000,
+  };
+  timers.push(timer);
+  finishedShipmentTimerIds.delete(timer.id);
+  saveShipmentTimers();
+  renderShipmentTimerManager();
+  renderQuickCopy();
+  updateShipmentTimers();
+  setStatus(`${timer.label} timer started for ${duration} minutes.`);
+}
+
+function removeShipmentTimer(timerId) {
+  shipmentTimers = getShipmentTimers().filter((timer) => timer.id !== timerId);
+  finishedShipmentTimerIds.delete(timerId);
+  ringingShipmentTimerIds.delete(timerId);
+  if (ringingShipmentTimerIds.size === 0) stopShipmentBells();
+  saveShipmentTimers();
+  renderShipmentTimerManager();
+  renderQuickCopy();
+  updateShipmentTimers();
+}
+
+function openShipmentTimer() {
+  localStorage.removeItem(SHIPMENT_TIMER_MINIMIZED_KEY);
+  renderQuickCopy();
+  openExtraTool("Shipment Timer");
+  renderShipmentTimerManager();
+  ensureShipmentTimerInterval();
+  updateShipmentTimers();
+}
+
+function renderShipmentTimerManager() {
+  if (!extraToolBody || extraToolTitle?.textContent !== "Shipment Timer") return;
+  const body = extraToolBody;
+  body.innerHTML = "";
+
+  const timerList = document.createElement("div");
+  timerList.className = "shipment-timer-list";
+  const timers = getShipmentTimers();
+  timers.forEach((timer) => {
+    const row = document.createElement("article");
+    row.className = "shipment-timer-row";
+    const label = document.createElement("strong");
+    label.textContent = timer.label;
+    const display = document.createElement("span");
+    display.className = "shipment-timer-row-time";
+    display.dataset.shipmentTimerDisplay = timer.id;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "shipment-timer-remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => removeShipmentTimer(timer.id));
+    row.append(label, display, remove);
+    timerList.appendChild(row);
+  });
+  if (timers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "shipment-timer-empty";
+    empty.textContent = "No shipment timers running.";
+    timerList.appendChild(empty);
+  }
+
+  const count = document.createElement("p");
+  count.className = "shipment-timer-count";
+  count.textContent = `${timers.length}/${MAX_SHIPMENT_TIMERS} timers`;
+
+  const form = document.createElement("div");
+  form.className = "shipment-timer-form";
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.maxLength = 30;
+  labelInput.placeholder = `Label (e.g. Gun shipment)`;
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "1";
+  durationInput.max = "180";
+  durationInput.placeholder = "Minutes";
+  const presets = document.createElement("div");
+  presets.className = "shipment-timer-presets";
+  [5, 10, 15, 20, 30].forEach((minutes) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${minutes} min`;
+    button.addEventListener("click", () => {
+      durationInput.value = String(minutes);
+    });
+    presets.appendChild(button);
+  });
+
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "shipment-timer-start";
+  start.textContent = "Start";
+  start.disabled = timers.length >= MAX_SHIPMENT_TIMERS;
+  start.addEventListener("click", () =>
+    startShipmentTimer(labelInput.value, durationInput.value),
+  );
+  durationInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      startShipmentTimer(labelInput.value, durationInput.value);
+    }
+  });
+
+  const fields = document.createElement("div");
+  fields.className = "shipment-timer-fields";
+  fields.append(labelInput, durationInput, start);
+  form.append(fields, presets);
+
+  const stopBell = document.createElement("button");
+  stopBell.type = "button";
+  stopBell.className = "shipment-bell-stop hidden";
+  stopBell.dataset.stopShipmentBells = "";
+  stopBell.textContent = "Stop bell";
+  stopBell.addEventListener("click", stopShipmentBells);
+
+  body.append(timerList, count, form, stopBell);
+  renderShipmentBellControl();
+  updateShipmentTimers();
+}
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest(".extras-menu-wrap")) return;
+  document.querySelectorAll(".extras-dropdown").forEach((menu) => {
+    menu.classList.add("hidden");
+  });
+  document.querySelectorAll(".extras-toggle").forEach((button) => {
+    button.setAttribute("aria-expanded", "false");
+  });
+});
+
+function openQuickLink(entry) {
+  if (entry.prefillGovForm) {
+    openCurrentGovForm();
+    return;
+  }
+  openGovFormWindow(entry.url, entry.label);
+}
+
+function openCurrentGovForm() {
+  const url = buildGovFormUrl(GOV_FORM_URL, {
+    employee: els.employee.value.trim(),
+    customer: els.customer.value.trim(),
+    license: els.customerLicense.value.trim(),
+    paid: els.paid.value.trim(),
+    lines: getSelectedLines(),
+  });
+  openGovFormWindow(url, "Gov Form");
+}
+
+function openGovFormWindow(url, label = "Gov Form") {
+  const features =
+    "popup=yes,width=980,height=900,left=80,top=40,scrollbars=yes,resizable=yes";
+  const opened = window.open(url, "bisarnosGovForm", features);
+  if (!opened) {
+    setStatus(`Could not open ${label}. Allow pop-ups for this site.`, true);
+    return;
+  }
+  opened.focus();
+  setStatus(`${label} opened.`);
+}
+
+// Google Form field IDs.
+const GOV_FORM_ENTRIES = {
+  employee: "366340186",
+  customer: "531398986",
+  license: "510734277",
+  paid: "2058522433",
+  items: "133198077",
+  notes: "1684576907",
+};
+
+const GOV_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSf78LOyjb4BBFe9Lk-HEn2qaVu79-B0AlUUjGVrlt8YVsBC-w/viewform";
+
+// Form labels that differ from the catalog.
+const GOV_FORM_ITEM_LABELS = {
+  "mini14-mag-kit": "Mini 14 Magazine Kit",
+  "type100-40-mag": "40 Round Extended Magazine (type 100/44)",
+  "akm74-45-mag": "45 Round 5.45x39mm AKM-74 Magazine Kit",
+  "uzi-mag-kit": "Uzi Mag Conversion Kit",
+  "pm-25-mag": "25 Round Extended Magazine (P226)",
+  "cz75-18-mag": "18 Round Extended Magazine (CZ75)",
+  "vp70-30-mag": "30 Round Magazine (VP70)",
+  susat: "SUSAT 2-4x Scope",
+  farview: "Farview 2-12x Scope",
+  "walther-scope": "Walther 1.5x Scope",
+  "fal-18-para-barrel": "18 in. Para Barrel (FN FAL)",
+  "p226-slide-kit": "Sig Sauer P226 Slide Kit",
+  "deagle-slide-kit": "Desert Eagle Slide Kit",
+  "benelli-7-tube": "7 Round Tube (Benelli M3)",
+  "benelli-12-tube": "12 Round Tube (Benelli M3)",
+  "mini14-barrel-kit": "Mini 14 Barrel Kit",
+  "m16a2-barrel-kit": "Colt M16A2 Barrel Kit",
+  "p38-carbine-barrel": "Carbine Barrrel",
+  "pbs1-suppressor": "PBS - 1 Supressor",
+  "light-suppressor": "Light Supressor",
+  "m16a2-receiver-kit": "Colt M16A2 Receiver Kit",
+};
+
+function buildGovFormUrl(baseUrl, source = {}) {
+  const params = new URLSearchParams();
+  params.set("usp", "pp_url");
+
+  const employee = (source.employee || "").trim();
+  const customer = (source.customer || "").trim();
+  const license = (source.license || "").trim();
+  const paid = String(source.paid || "")
+    .trim()
+    .replace(/,/g, "");
+  if (employee) params.set(`entry.${GOV_FORM_ENTRIES.employee}`, employee);
+  if (customer) params.set(`entry.${GOV_FORM_ENTRIES.customer}`, customer);
+  if (license) params.set(`entry.${GOV_FORM_ENTRIES.license}`, license);
+  if (paid) params.set(`entry.${GOV_FORM_ENTRIES.paid}`, paid);
+
+  const lines = source.lines || [];
+  const checked = new Set();
+  const noteParts = [];
+  const unmapped = [];
+
+  lines.forEach((line) => {
+    const formLabel = GOV_FORM_ITEM_LABELS[line.item.id];
+    if (formLabel) checked.add(formLabel);
+    else unmapped.push(line.item.name);
+
+    const extras = [];
+    if (line.qty > 1) extras.push(`x${line.qty}`);
+    if (line.mode) extras.push(MODE_LABELS[line.mode]);
+    if (extras.length) {
+      noteParts.push(`${formLabel || line.item.name} (${extras.join(", ")})`);
+    }
+  });
+
+  checked.forEach((label) => {
+    params.append(`entry.${GOV_FORM_ENTRIES.items}`, label);
+  });
+
+  if (unmapped.length) {
+    noteParts.push(`Not on form checklist: ${unmapped.join(", ")}`);
+  }
+
+  if (noteParts.length) {
+    params.set(`entry.${GOV_FORM_ENTRIES.notes}`, noteParts.join("; "));
+  }
+
+  return `${baseUrl}?${params.toString()}`;
+}
+
+function openHeldGovForm(sale) {
+  if (heldSaleStoreId(sale) !== "bisarnos") return;
+  const url = buildGovFormUrl(GOV_FORM_URL, {
+    employee: sale.employee || "",
+    customer: sale.customer || "",
+    license: sale.customerLicense || "",
+    paid: sale.paid || "",
+    lines: heldSaleLines(sale),
+  });
+  openGovFormWindow(url, "Gov Form");
+}
+
+async function copyQuickText(entry) {
+  try {
+    await navigator.clipboard.writeText(entry.text);
+    setStatus(`${entry.label} copied.`);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = entry.text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.appendChild(area);
+    area.select();
+    try {
+      document.execCommand("copy");
+      setStatus(`${entry.label} copied.`);
+    } catch {
+      setStatus(`Could not copy ${entry.label}.`, true);
+    } finally {
+      document.body.removeChild(area);
+    }
+  }
+}
+
+function renderQuickConfirm() {
+  els.quickConfirmBody.innerHTML = "";
+  STORES.bisarnos.menu.forEach((group) => {
+    const column = document.createElement("div");
+    column.className = "quick-confirm-cat";
+
+    const title = document.createElement("h4");
+    title.className = "quick-confirm-title";
+    title.textContent = group.category;
+    column.appendChild(title);
+
+    const list = document.createElement("ul");
+    list.className = "quick-confirm-items";
+    group.items.forEach((item) => {
+      const entry = document.createElement("li");
+      entry.textContent = item.name;
+      if (item.soldOut) entry.classList.add("out");
+      list.appendChild(entry);
+    });
+    column.appendChild(list);
+
+    els.quickConfirmBody.appendChild(column);
+  });
+}
+
+const INVENTORY_STOCK_KEY = "scumbags-bisarnos-inventory-stock";
+const INVENTORY_CASE_CAPACITY = 9;
+const INVENTORY_UNLISTED_GROUP = {
+  category: "Unlisted",
+  items: [
+    { id: "unlisted-64-drum", name: "64-Round Drum Magazine" },
+    { id: "unlisted-uzi-beta-cmag", name: "100-Round Beta C-Mag (Uzi)" },
+    {
+      id: "unlisted-80-parabellum-drum",
+      name: "80-Round 9x19mm Parabellum Drum Magazine",
+    },
+    {
+      id: "unlisted-50-parabellum-casket",
+      name: "50-Round 9x19mm Parabellum Casket Magazine",
+    },
+    {
+      id: "unlisted-m16a2-beta-cmag",
+      name: "100-Round Beta C-Mag (Colt M16A2)",
+    },
+    { id: "unlisted-m249-bipod", name: "Integrated Bipod (FN M249 SAW)" },
+    { id: "unlisted-40sw-mag", name: "10-Round .40 S&W Magazine" },
+    { id: "unlisted-standard-30-mag", name: "30-Round Standard Magazine" },
+    { id: "unlisted-762-30-mag", name: "30-Round 7.62x39mm Magazine" },
+    {
+      id: "unlisted-nato-75-drum",
+      name: "75-Round 5.56x45mm NATO Drum Magazine",
+    },
+    { id: "unlisted-9x53mmr-mag", name: "10-Round 9x53mmR Magazine" },
+  ],
+};
+const inventoryState = {
+  caseLabels: Array(6).fill(""),
+  caseItems: Array.from({ length: 6 }, () => []),
+};
+let selectedInventoryCase = 0;
+
+function inventoryCaseGroups() {
+  return [...STORES.bisarnos.menu, INVENTORY_UNLISTED_GROUP];
+}
+
+function inventoryCaseItems() {
+  return inventoryCaseGroups().flatMap((group) => group.items);
+}
+
+function loadInventoryStock() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(INVENTORY_STOCK_KEY) || "null");
+    if (!saved) return;
+    if (Array.isArray(saved.caseLabels)) {
+      saved.caseLabels.slice(0, 6).forEach((label, index) => {
+        inventoryState.caseLabels[index] = String(label || "");
+      });
+    }
+    if (Array.isArray(saved.caseItems)) {
+      const validIds = new Set(inventoryCaseItems().map((item) => item.id));
+      saved.caseItems.slice(0, 6).forEach((items, index) => {
+        if (!Array.isArray(items)) return;
+        inventoryState.caseItems[index] = [
+          ...new Set(items.filter((id) => validIds.has(id))),
+        ].slice(0, INVENTORY_CASE_CAPACITY);
+      });
+    }
+  } catch {
+    localStorage.removeItem(INVENTORY_STOCK_KEY);
+  }
+}
+
+function saveInventoryStock() {
+  localStorage.setItem(
+    INVENTORY_STOCK_KEY,
+    JSON.stringify({
+      caseLabels: inventoryState.caseLabels,
+      caseItems: inventoryState.caseItems,
+    }),
+  );
+}
+
+function updateInventoryCaseCards() {
+  const items = inventoryCaseItems();
+  els.inventoryCaseGrid.querySelectorAll("[data-case-card]").forEach((card) => {
+    const index = Number(card.dataset.caseCard);
+    const assignedIds = inventoryState.caseItems[index] || [];
+    const assignedNames = assignedIds
+      .map((id) => items.find((item) => item.id === id)?.name)
+      .filter(Boolean)
+      .slice(0, INVENTORY_CASE_CAPACITY);
+    const summary = card.querySelector("[data-case-summary]");
+    summary.innerHTML = "";
+    if (assignedNames.length === 0) {
+      const empty = document.createElement("span");
+      empty.textContent = "Empty case";
+      summary.appendChild(empty);
+    } else {
+      assignedNames.forEach((name) => {
+        const entry = document.createElement("span");
+        entry.textContent = name;
+        summary.appendChild(entry);
+      });
+    }
+    card.classList.toggle("selected", index === selectedInventoryCase);
+  });
+}
+
+function setSelectedInventoryCase(index) {
+  selectedInventoryCase = Math.max(0, Math.min(5, Number(index) || 0));
+  renderInventoryCaseAssignment();
+  updateInventoryCaseCards();
+}
+
+function setCaseItemAssigned(caseIndex, itemId, assigned) {
+  const items = new Set(inventoryState.caseItems[caseIndex] || []);
+  if (assigned && items.size >= INVENTORY_CASE_CAPACITY) return false;
+  if (assigned) items.add(itemId);
+  else items.delete(itemId);
+  inventoryState.caseItems[caseIndex] = [...items];
+  saveInventoryStock();
+  updateInventoryCaseCards();
+  return true;
+}
+
+function renderInventoryCaseAssignment() {
+  const label =
+    inventoryState.caseLabels[selectedInventoryCase].trim() ||
+    `Case ${selectedInventoryCase + 1}`;
+  els.inventoryCaseAssignmentList.innerHTML = "";
+  const assigned = new Set(inventoryState.caseItems[selectedInventoryCase] || []);
+  els.inventoryCaseAssignmentTitle.textContent = `Assign items to ${label} (${assigned.size}/${INVENTORY_CASE_CAPACITY})`;
+
+  inventoryCaseGroups().forEach((group) => {
+    const section = document.createElement("section");
+    section.className = "inventory-case-assignment-group";
+    if (group.category === "Unlisted") section.classList.add("unlisted");
+    const title = document.createElement("h5");
+    title.textContent = group.category;
+    section.appendChild(title);
+
+    group.items.forEach((item) => {
+      const option = document.createElement("label");
+      option.className = "inventory-case-item";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = assigned.has(item.id);
+      checkbox.disabled =
+        !checkbox.checked && assigned.size >= INVENTORY_CASE_CAPACITY;
+      const name = document.createElement("span");
+      name.textContent = item.name;
+      checkbox.addEventListener("change", () => {
+        const changed = setCaseItemAssigned(
+          selectedInventoryCase,
+          item.id,
+          checkbox.checked,
+        );
+        if (!changed) checkbox.checked = false;
+        renderInventoryCaseAssignment();
+      });
+      option.classList.toggle("assigned", checkbox.checked);
+      option.append(checkbox, name);
+      section.appendChild(option);
+    });
+    els.inventoryCaseAssignmentList.appendChild(section);
+  });
+}
+
+function renderInventoryStock() {
+  els.inventoryCaseGrid
+    .querySelectorAll("[data-case-index]")
+    .forEach((input) => {
+      const index = Number(input.dataset.caseIndex);
+      input.value = inventoryState.caseLabels[index] || "";
+      input.addEventListener("input", () => {
+        inventoryState.caseLabels[index] = input.value;
+        saveInventoryStock();
+        if (index === selectedInventoryCase) renderInventoryCaseAssignment();
+      });
+    });
+
+  els.inventoryCaseGrid
+    .querySelectorAll("[data-case-card]")
+    .forEach((card) => {
+      const select = () => setSelectedInventoryCase(card.dataset.caseCard);
+      card.addEventListener("click", (event) => {
+        if (event.target.closest("input")) return;
+        select();
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.target.closest("input")) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        select();
+      });
+    });
+  renderInventoryCaseAssignment();
+  updateInventoryCaseCards();
+}
+
+function openBisarnosLock() {  els.bisarnosLockError.textContent = "";
   els.bisarnosPasscode.value = "";
   els.bisarnosLock.hidden = false;
   els.bisarnosLock.classList.remove("hidden");
@@ -776,6 +2388,8 @@ function switchStore(storeId) {
   const state = activeState();
   els.customer.value = state.customer || "";
   els.customerLicense.value = state.customerLicense || "";
+  els.couponCode.value = state.couponCode || "";
+  els.orderIdentifier.value = state.orderIdentifier || "";
   els.paid.value = state.paid;
   els.search.value = state.search;
 
@@ -795,28 +2409,50 @@ function saveEmployee() {
 }
 
 function loadInitialStore() {
-  // Bisarnos stays locked until the passcode is entered this session.
   const saved = localStorage.getItem(ACTIVE_STORE_KEY);
   if (saved && STORES[saved] && saved !== "bisarnos") activeStoreId = saved;
 }
 
 const PHOTO_DB_NAME = "scumbags-sale-tracker";
 const PHOTO_STORE_NAME = "bisarnos-photos";
+const HELD_SALE_STORE_NAME = "bisarnos-held-sales";
 let photoRecords = [];
 let photoObjectUrls = [];
+let heldSales = [];
+
+function photoStoreId(record) {
+  return record.storeId || "bisarnos";
+}
+
+function activePhotoRecords() {
+  return photoRecords.filter((record) => photoStoreId(record) === activeStoreId);
+}
 
 function openPhotoDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(PHOTO_DB_NAME, 1);
+    const request = indexedDB.open(PHOTO_DB_NAME, 3);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) {
         db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains(HELD_SALE_STORE_NAME)) {
+        db.createObjectStore(HELD_SALE_STORE_NAME, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(PHOTO_DUMP_STORE_NAME)) {
+        db.createObjectStore(PHOTO_DUMP_STORE_NAME, { keyPath: "id" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return;
+  try {
+    await navigator.storage.persist();
+  } catch {}
 }
 
 async function runPhotoTransaction(mode, operation) {
@@ -825,9 +2461,49 @@ async function runPhotoTransaction(mode, operation) {
     const transaction = db.transaction(PHOTO_STORE_NAME, mode);
     const store = transaction.objectStore(PHOTO_STORE_NAME);
     const request = operation(store);
-    request.onsuccess = () => resolve(request.result);
+    let result;
+    request.onsuccess = () => {
+      result = request.result;
+    };
     request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+}
+
+async function runHeldSaleTransaction(mode, operation) {
+  const db = await openPhotoDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(HELD_SALE_STORE_NAME, mode);
+    const store = transaction.objectStore(HELD_SALE_STORE_NAME);
+    const request = operation(store);
+    let result;
+    request.onsuccess = () => {
+      result = request.result;
+    };
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error);
+    };
   });
 }
 
@@ -869,7 +2545,6 @@ function startPhotoWindowDrag(event) {
 
   const win = els.photoLightbox;
   const rect = win.getBoundingClientRect();
-  // Ignore the native resize grip in the bottom-right corner.
   if (event.clientX > rect.right - 18 && event.clientY > rect.bottom - 18) {
     return;
   }
@@ -905,6 +2580,107 @@ let ocrWorkerPromise = null;
 let ocrPassLabel = "ID";
 
 const LICENSE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
+const COUPON_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const COUPON_CODES = new Set([
+  "A424681190546792361",
+  "B294407129869230295",
+  "C415213934834762662",
+  "D324452593454395396",
+  "E821522828072349762",
+  "F272166749284946528",
+  "G807888948267449297",
+  "H897523223090582032",
+  "I254394663776942021",
+  "J646744753705459551",
+  "K455840943898621514",
+  "L151913881034032396",
+  "M667935301164022509",
+  "N707612942921015284",
+  "O623533731041280332",
+  "P814277853443640134",
+  "Q754032469302508680",
+  "R430069189566681245",
+  "S239442469427513550",
+  "T394011540664805696",
+]);
+
+function normalizeCouponToken(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/O/g, "0")
+    .replace(/[IL]/g, "1")
+    .replace(/S/g, "5")
+    .replace(/B/g, "8")
+    .replace(/Z/g, "2");
+}
+
+function tidyCouponCode(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function isKnownCouponCode(value) {
+  return COUPON_CODES.has(tidyCouponCode(value));
+}
+
+function extractCouponCode(text) {
+  const cleaned = String(text || "").toUpperCase();
+  if (!cleaned) return "";
+
+  for (const code of COUPON_CODES) {
+    if (cleaned.includes(code)) return code;
+  }
+
+  const candidates = cleaned.match(/[A-T][0-9OILSBZ]{18}/g) || [];
+  for (const candidate of candidates) {
+    const tidy = tidyCouponCode(candidate);
+    if (COUPON_CODES.has(tidy)) return tidy;
+  }
+
+  const compact = cleaned.replace(/[^A-Z0-9]/g, "");
+  for (const code of COUPON_CODES) {
+    if (compact.includes(code)) return code;
+  }
+
+  const fuzzy = compact.match(/[A-T][0-9OILSBZ]{18}/g) || [];
+  for (const candidate of fuzzy) {
+    const prefix = candidate[0];
+    const body = normalizeCouponToken(candidate.slice(1));
+    const rebuilt = `${prefix}${body}`;
+    if (COUPON_CODES.has(rebuilt)) return rebuilt;
+    for (const code of COUPON_CODES) {
+      if (code[0] !== prefix) continue;
+      const target = code.slice(1);
+      let mismatches = 0;
+      for (let i = 0; i < 18; i += 1) {
+        if (body[i] !== target[i]) mismatches += 1;
+        if (mismatches > 1) break;
+      }
+      if (mismatches <= 1) return code;
+    }
+  }
+
+  return "";
+}
+
+function applyCouponCode(code, { announce = true } = {}) {
+  const tidy = tidyCouponCode(code);
+  if (!tidy) return false;
+  els.couponCode.value = tidy;
+  storeState.bisarnos.couponCode = tidy;
+  syncPaidFromAuto();
+  updatePreview();
+  if (announce) {
+    if (isKnownCouponCode(tidy)) {
+      setStatus("Coupon code accepted.");
+    } else {
+      setStatus("Coupon code entered, but it is not on the valid list.", true);
+    }
+  }
+  return true;
+}
 
 function boostContrast(canvas, amount) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -942,8 +2718,6 @@ function drawScaled(source, sx, sy, sWidth, sHeight, scale, contrast = 0) {
   return contrast ? boostContrast(canvas, contrast) : canvas;
 }
 
-// The whole screenshot is scanned, so the ID can sit anywhere in frame. The
-// contrast stretch is what makes the big license text read cleanly.
 async function loadOcrSource(blob) {
   const bitmap = await createImageBitmap(blob);
   const scale = Math.min(3, Math.max(1, 2200 / bitmap.width));
@@ -959,8 +2733,6 @@ async function loadOcrSource(blob) {
   return { bitmap, canvas, scale };
 }
 
-// Crops are taken from the untouched original, so zooming never compounds the
-// blur of an already-resampled image. Coordinates come in canvas space.
 function cropSource(source, bbox, { targetWidth, contrast, pad = 0 }) {
   const x = Math.max(0, bbox.x0 / source.scale - pad);
   const y = Math.max(0, bbox.y0 / source.scale - pad);
@@ -977,8 +2749,6 @@ function cropSource(source, bbox, { targetWidth, contrast, pad = 0 }) {
   return drawScaled(source.bitmap, x, y, width, height, zoom, contrast);
 }
 
-// The card's detail text sits above the license, so the license line anchors
-// the crop wherever the ID happens to be on screen.
 function cardRegionFromLicense(bbox) {
   const lineWidth = bbox.x1 - bbox.x0;
   const lineHeight = bbox.y1 - bbox.y0;
@@ -1026,7 +2796,6 @@ function collectLines(data) {
   return lines;
 }
 
-// Lines that look like they could hold a license code, best guess first.
 function rankLicenseLines(lines) {
   const usable = lines.filter((line) => line.bbox);
   const ranked = usable
@@ -1046,8 +2815,6 @@ function rankLicenseLines(lines) {
 
   if (ranked.length > 0) return ranked;
 
-  // The first pass can be too garbled to rank, so fall back to re-reading the
-  // biggest lines on the page — the license is usually printed large.
   return usable
     .sort(
       (a, b) =>
@@ -1069,15 +2836,13 @@ function extractCustomerName(text) {
       .replace(/^[.\s-]+|[.\s-]+$/g, "")
       .trim();
 
-    // A nickname's opening or closing quote is easily lost; put it back rather
-    // than leaving a lopsided "Tony Meat" Peace.
+    // Balance nickname quotes.
     if ((cleaned.match(/"/g) || []).length === 1) {
       cleaned = cleaned
         .replace(/(^|\s)([A-Za-zÀ-ÖØ-öø-ÿ'-]+)"/, '$1"$2"')
         .replace(/"([A-Za-zÀ-ÖØ-öø-ÿ'-]+)(\s|$)/, '"$1"$2');
     }
 
-    // Trim stray one-character reads that OCR picks up around the text.
     const parts = cleaned.split(" ");
     while (parts.length > 2 && /^[A-Za-z"']$/.test(parts[parts.length - 1])) {
       parts.pop();
@@ -1094,13 +2859,20 @@ function extractCustomerName(text) {
 
   for (let index = 0; index < lines.length; index += 1) {
     if (!/\bname\b/i.test(lines[index])) continue;
-    // The card prints "Name" as a heading with the value on the next line,
-    // but some layouts keep both on one line.
     const sameLine = tidy(
       lines[index].replace(/^.*?\bname\b\s*[:\-]?\s*/i, "").split(labels)[0],
     );
     const nextLine = tidy((lines[index + 1] || "").split(labels)[0]);
     const candidate = letterCount(sameLine) >= 3 ? sameLine : nextLine;
+    if (letterCount(candidate) >= 3 && !labels.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback when the Name heading is unreadable.
+  for (let index = 1; index < lines.length; index += 1) {
+    if (!/\b(?:nationality|english)\b/i.test(lines[index])) continue;
+    const candidate = tidy(lines[index - 1].split(labels)[0]);
     if (letterCount(candidate) >= 3 && !labels.test(candidate)) {
       return candidate;
     }
@@ -1121,8 +2893,7 @@ const OCR_DIGIT_FIXES = {
   G: "6",
 };
 
-// Groups that are mostly numeric are meant to be numeric, so undo the
-// letter/digit confusions Tesseract makes on blocky in-game fonts.
+// Fix OCR mixups in digit groups.
 function repairDigitGroup(group) {
   const digits = (group.match(/\d/g) || []).length;
   if (digits === 0 || digits < group.length - 2) return group;
@@ -1133,8 +2904,6 @@ function countDigits(value) {
   return (value.match(/\d/g) || []).length;
 }
 
-// A finished code has its digit block plus a short trailing group, which is
-// how we know not to swallow the next word on the line.
 function looksLikeWholeLicense(run) {
   return (
     countDigits(run) >= 5 && !run.endsWith("-") && /-[A-Z0-9]{1,3}$/.test(run)
@@ -1150,8 +2919,6 @@ function tidyLicense(run) {
     .join("-");
 }
 
-// Squeezing out spaces can glue a neighbouring word onto the code, so keep the
-// shortest prefix that already reads as a finished license.
 function trimToLicense(run) {
   const groups = run.split("-");
   for (let count = 2; count <= groups.length; count += 1) {
@@ -1161,8 +2928,7 @@ function trimToLicense(run) {
   return run;
 }
 
-// OCR sometimes breaks one code across several tokens ("FAFL-1-204 164- -A"),
-// so glue tokens back on until the code looks complete.
+// Rejoin split license tokens.
 function rebuildLicenseFromTokens(tokens, startIndex) {
   let run = tidyLicense(tokens[startIndex]);
   let index = startIndex;
@@ -1180,14 +2946,11 @@ function rebuildLicenseFromTokens(tokens, startIndex) {
 function extractLicenseNumber(text) {
   const cleaned = text
     .replace(/[|[\]{}()]/g, " ")
-    // OCR often splits the prefix, e.g. "F A V L-3-196441-A".
     .replace(/\b((?:[A-Za-z]\s+){1,5}[A-Za-z])(?=\s*[-—–])/g, (chunk) =>
       chunk.replace(/\s+/g, ""),
     )
-    // Normalise dash variants and spacing around them.
     .replace(/[—–‑‒−]/g, "-")
     .replace(/\s*-\s*/g, "-")
-    // Rebuild licenses whose hyphens were lost entirely.
     .replace(
       /\bF([A-Z]{1,4})\s+([A-Z0-9]{1,3})\s+([A-Z0-9]{3,8})\s+([A-Z0-9]{1,3})\b/gi,
       "F$1-$2-$3-$4",
@@ -1203,17 +2966,43 @@ function extractLicenseNumber(text) {
     });
   });
 
-  const valid = candidates
-    .filter((value) => /^F[A-Z0-9]{0,5}(?:-[A-Z0-9]{1,8})+$/.test(value))
-    .map((value) => ({ value, digits: countDigits(value) }))
-    // Anything shorter is a partial read; a wrong license beats no license
-    // only in the sense that it is worse, so those are dropped.
-    .filter((entry) => entry.digits >= 5);
+  const CANONICAL_LICENSE = /^F[A-Z]{3}-[0-9]-[0-9]{6}-[A-Z]$/;
+  const ACCEPTABLE_LICENSE = /^F[A-Z]{2,4}-[A-Z0-9]{1,2}-[0-9]{5,7}-[A-Z0-9]{1,2}$/;
 
-  if (valid.length === 0) return "";
+  const scored = candidates
+    .map((value) => value.trim())
+    .filter((value) => ACCEPTABLE_LICENSE.test(value))
+    .map((value) => ({
+      value,
+      canonical: CANONICAL_LICENSE.test(value) ? 1 : 0,
+      digits: countDigits(value),
+    }));
 
-  valid.sort((a, b) => b.digits - a.digits || b.value.length - a.value.length);
-  return valid[0].value;
+  if (scored.length === 0) {
+    // Lenient fallback still requires the full six-digit block.
+    const lenient = candidates
+      .map((value) => value.trim())
+      .filter(
+        (value) =>
+          /^F[A-Z0-9]{1,5}(?:-[A-Z0-9]{1,8})+$/.test(value) &&
+          /[0-9]{6}/.test(value),
+      )
+      .map((value) => ({ value, digits: countDigits(value) }));
+
+    if (lenient.length === 0) return "";
+    lenient.sort(
+      (a, b) => b.digits - a.digits || b.value.length - a.value.length,
+    );
+    return lenient[0].value;
+  }
+
+  scored.sort(
+    (a, b) =>
+      b.canonical - a.canonical ||
+      b.digits - a.digits ||
+      b.value.length - a.value.length,
+  );
+  return scored[0].value;
 }
 
 async function scanPhotoForId(blob) {
@@ -1243,9 +3032,7 @@ async function scanPhotoForId(blob) {
     let name = extractCustomerName(full.text);
     let license = extractLicenseNumber(full.text);
 
-    // The card's small print rarely survives the full-page pass, so re-read
-    // the card itself: cropped from the original and left unsharpened, which
-    // is what makes the tiny grey text legible.
+    // Try the ID card crop.
     if (!name) {
       const anchor =
         lines.find((line) => extractLicenseNumber(line.text)) ||
@@ -1272,7 +3059,7 @@ async function scanPhotoForId(blob) {
       }
     }
 
-    // Zoom into whichever lines look like a license, wherever they sit.
+    // Try likely license lines.
     if (!license) {
       for (const target of rankLicenseLines(lines)) {
         const zoomed = cropSource(source, target.bbox, {
@@ -1293,7 +3080,7 @@ async function scanPhotoForId(blob) {
       }
     }
 
-    // Last resort: sparse-text sweep that reads scattered codes anywhere.
+    // Last OCR fallback.
     if (!license) {
       ocrPassLabel = "scattered text";
       const sparse = await runOcr(source.canvas, {
@@ -1329,12 +3116,96 @@ async function scanPhotoForId(blob) {
   }
 }
 
+async function scanPhotoForCoupon(blob) {
+  if (ocrRunning) {
+    setStatus("A scan is already running.", true);
+    return;
+  }
+  if (!window.Tesseract) {
+    setStatus("OCR could not load. Check your internet connection.", true);
+    return;
+  }
+
+  ocrRunning = true;
+  setStatus("Scanning photo for coupon code…");
+
+  let source = null;
+
+  try {
+    source = await loadOcrSource(blob);
+
+    ocrPassLabel = "the coupon photo";
+    const full = await runOcr(source.canvas, {
+      psm: Tesseract.PSM.AUTO,
+      whitelist: COUPON_CHARS,
+    });
+    let coupon = extractCouponCode(full.text);
+
+    if (!coupon) {
+      const bands = [
+        { x0: 0.05, y0: 0.5, x1: 0.95, y1: 0.98 },
+        { x0: 0.05, y0: 0.72, x1: 0.95, y1: 0.95 },
+      ];
+      for (const band of bands) {
+        const region = {
+          x0: source.canvas.width * band.x0,
+          y0: source.canvas.height * band.y0,
+          x1: source.canvas.width * band.x1,
+          y1: source.canvas.height * band.y1,
+        };
+        const crop = cropSource(source, region, {
+          targetWidth: 2000,
+          contrast: 1.4,
+          pad: 4,
+        });
+        if (!crop) continue;
+        ocrPassLabel = "the coupon banner";
+        const banner = await runOcr(crop, {
+          psm: Tesseract.PSM.SINGLE_LINE,
+          whitelist: COUPON_CHARS,
+        });
+        coupon = extractCouponCode(banner.text);
+        if (coupon) break;
+      }
+    }
+
+    if (!coupon) {
+      ocrPassLabel = "scattered coupon text";
+      const sparse = await runOcr(source.canvas, {
+        psm: Tesseract.PSM.SPARSE_TEXT,
+        whitelist: COUPON_CHARS,
+      });
+      coupon = extractCouponCode(sparse.text);
+    }
+
+    if (!coupon) {
+      ocrPassLabel = "coupon line";
+      const line = await runOcr(source.canvas, {
+        psm: Tesseract.PSM.SINGLE_LINE,
+        whitelist: COUPON_CHARS,
+      });
+      coupon = extractCouponCode(line.text);
+    }
+
+    if (coupon) {
+      applyCouponCode(coupon);
+    } else {
+      setStatus("Could not find a valid coupon code in this photo.", true);
+    }
+  } catch {
+    setStatus("Could not scan this photo for a coupon.", true);
+  } finally {
+    if (source) source.bitmap.close();
+    ocrRunning = false;
+  }
+}
+
 function renderPhotoClipboard() {
   photoObjectUrls.forEach((url) => URL.revokeObjectURL(url));
   photoObjectUrls = [];
   els.photoList.innerHTML = "";
 
-  photoRecords
+  activePhotoRecords()
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
     .forEach((record) => {
@@ -1345,7 +3216,11 @@ function renderPhotoClipboard() {
       card.innerHTML = `
         <img src="${url}" alt="Saved sale screenshot" />
         <div class="photo-actions">
-          <button type="button" class="photo-action scan-photo">Scan ID</button>
+          ${
+            activeStoreId === "bisarnos"
+              ? '<button type="button" class="photo-action scan-photo">Scan ID</button><button type="button" class="photo-action scan-coupon">Scan coupon</button>'
+              : ""
+          }
           <button type="button" class="photo-action copy-photo">Copy photo</button>
           <button type="button" class="photo-action remove" aria-label="Remove photo">Remove</button>
         </div>
@@ -1355,8 +3230,11 @@ function renderPhotoClipboard() {
         event.preventDefault();
         openPhotoLightbox(url);
       });
-      card.querySelector(".scan-photo").addEventListener("click", () => {
+      card.querySelector(".scan-photo")?.addEventListener("click", () => {
         scanPhotoForId(record.blob);
+      });
+      card.querySelector(".scan-coupon")?.addEventListener("click", () => {
+        scanPhotoForCoupon(record.blob);
       });
       card.querySelector(".copy-photo").addEventListener("click", () => {
         copyPhoto(record.blob);
@@ -1380,6 +3258,7 @@ async function loadPhotos() {
 }
 
 async function addPhotos(files) {
+  if (activeStoreId !== "bisarnos") return;
   const images = Array.from(files).filter((file) =>
     file.type.startsWith("image/"),
   );
@@ -1392,6 +3271,7 @@ async function addPhotos(files) {
     for (const file of images) {
       const record = {
         id: makePhotoId(),
+        storeId: activeStoreId,
         blob: file,
         createdAt: Date.now(),
       };
@@ -1416,12 +3296,16 @@ async function removePhoto(id) {
 }
 
 async function clearPhotos() {
-  if (photoRecords.length === 0) return;
+  const currentPhotos = activePhotoRecords();
+  if (currentPhotos.length === 0) return;
   if (!window.confirm("Remove every saved photo from the clipboard?")) return;
 
   try {
-    await runPhotoTransaction("readwrite", (store) => store.clear());
-    photoRecords = [];
+    for (const record of currentPhotos) {
+      await runPhotoTransaction("readwrite", (store) => store.delete(record.id));
+    }
+    const currentIds = new Set(currentPhotos.map((record) => record.id));
+    photoRecords = photoRecords.filter((record) => !currentIds.has(record.id));
     renderPhotoClipboard();
     setStatus("Photo clipboard cleared.");
   } catch {
@@ -1460,6 +3344,524 @@ async function copyPhoto(blob) {
   }
 }
 
+let heldPhotoObjectUrls = [];
+
+function heldSaleStoreId(sale) {
+  return sale.storeId || "bisarnos";
+}
+
+function heldSaleLines(sale) {
+  const store = STORES[heldSaleStoreId(sale)] || STORES.bisarnos;
+  const items = allItems(store);
+  return Object.entries(sale.quantities || {})
+    .map(([key, qty]) => {
+      const [itemId, mode] = key.split("::");
+      const item = items.find((entry) => entry.id === itemId);
+      return item && qty > 0 ? { item, mode, qty } : null;
+    })
+    .filter(Boolean);
+}
+
+function buildHeldSaleLog(sale) {
+  const lines = heldSaleLines(sale);
+  const paid = parsePaid(sale.paid);
+  if (!sale.employee || lines.length === 0 || paid == null) return "";
+
+  if (heldSaleStoreId(sale) === "lanova") {
+    const items = lines.map((line) => `${line.item.name} x ${line.qty}`);
+    return [
+      sale.employee,
+      ...items,
+      `Paid: ${formatMoney(paid)}`,
+    ].join("\n");
+  }
+
+  const attachments = lines
+    .map((line) => `x${line.qty} ${line.item.name} ${MODE_LABELS[line.mode]}`)
+    .join(", ");
+  const subtotal = getLinesTotal(lines);
+  const couponCode = tidyCouponCode(sale.couponCode);
+  const discount =
+    couponCode && isKnownCouponCode(couponCode)
+      ? Math.round(subtotal * 0.1 * 100) / 100
+      : 0;
+  return [
+    `Employee: ${sale.employee}`,
+    `Customer: ${sale.customer || ""}`,
+    `Paid: ${formatMoney(paid)}`,
+    ...(couponCode
+      ? [
+          `Coupon: ${couponCode}${
+            discount ? ` (-${formatMoney(discount)})` : ""
+          }`,
+        ]
+      : []),
+    `Attachments: ${attachments}`,
+  ].join("\n");
+}
+
+async function copyText(text, successMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(successMessage);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.appendChild(area);
+    area.select();
+    try {
+      document.execCommand("copy");
+      setStatus(successMessage);
+    } catch {
+      setStatus("Could not copy this held sale.", true);
+    } finally {
+      area.remove();
+    }
+  }
+}
+
+let heldHoverEl = null;
+let heldWindowEl = null;
+let heldWindowBody = null;
+
+function buildHeldPreviewNode(sale) {
+  const wrap = document.createElement("div");
+
+  const title = document.createElement("div");
+  title.className = "held-preview-title";
+  title.textContent =
+    sale.orderIdentifier ||
+    (heldSaleStoreId(sale) === "bisarnos"
+      ? sale.customer || "Unnamed customer"
+      : "La Nova order");
+  wrap.appendChild(title);
+
+  const list = document.createElement("ul");
+  list.className = "held-preview-list";
+  const lines = heldSaleLines(sale);
+  if (lines.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No items yet";
+    list.appendChild(li);
+  } else {
+    lines.forEach((line) => {
+      const li = document.createElement("li");
+      const nameEl = document.createElement("span");
+      nameEl.textContent = line.item.name;
+      const qtyEl = document.createElement("span");
+      qtyEl.textContent = `× ${line.qty}`;
+      li.append(nameEl, qtyEl);
+      list.appendChild(li);
+    });
+  }
+  wrap.appendChild(list);
+
+  const paid = parsePaid(sale.paid);
+  if (paid != null) {
+    const paidEl = document.createElement("div");
+    paidEl.className = "held-preview-paid";
+    paidEl.textContent = `Paid: ${formatMoney(paid)}`;
+    wrap.appendChild(paidEl);
+  }
+  return wrap;
+}
+
+function getHeldHoverEl() {
+  if (!heldHoverEl) {
+    heldHoverEl = document.createElement("div");
+    heldHoverEl.className = "held-preview hidden";
+    document.body.appendChild(heldHoverEl);
+  }
+  return heldHoverEl;
+}
+
+function showHeldHoverPreview(sale, card) {
+  const el = getHeldHoverEl();
+  el.innerHTML = "";
+  el.appendChild(buildHeldPreviewNode(sale));
+  el.classList.remove("hidden");
+
+  const rect = card.getBoundingClientRect();
+  el.style.top = `${Math.max(8, Math.min(rect.top, window.innerHeight - el.offsetHeight - 8))}px`;
+  let left = rect.left - el.offsetWidth - 12;
+  if (left < 8) left = Math.min(rect.right + 12, window.innerWidth - el.offsetWidth - 8);
+  el.style.left = `${left}px`;
+}
+
+function hideHeldHoverPreview() {
+  if (heldHoverEl) heldHoverEl.classList.add("hidden");
+}
+
+function closeHeldOrderWindow() {
+  if (heldWindowEl) heldWindowEl.classList.add("hidden");
+}
+
+function getHeldOrderWindow() {
+  if (heldWindowEl) return heldWindowEl;
+
+  heldWindowEl = document.createElement("div");
+  heldWindowEl.className = "held-window hidden";
+
+  const bar = document.createElement("div");
+  bar.className = "held-window-bar";
+  const barTitle = document.createElement("span");
+  barTitle.textContent = "Held order";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "held-window-close";
+  close.setAttribute("aria-label", "Close held order");
+  close.textContent = "✕";
+  close.addEventListener("click", closeHeldOrderWindow);
+  bar.append(barTitle, close);
+
+  heldWindowBody = document.createElement("div");
+  heldWindowBody.className = "held-window-body";
+  heldWindowEl.append(bar, heldWindowBody);
+  document.body.appendChild(heldWindowEl);
+
+  let dragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+  bar.addEventListener("pointerdown", (event) => {
+    if (event.target === close) return;
+    dragging = true;
+    const rect = heldWindowEl.getBoundingClientRect();
+    offsetX = event.clientX - rect.left;
+    offsetY = event.clientY - rect.top;
+    bar.setPointerCapture(event.pointerId);
+  });
+  bar.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const left = Math.max(
+      8,
+      Math.min(event.clientX - offsetX, window.innerWidth - heldWindowEl.offsetWidth - 8),
+    );
+    const top = Math.max(
+      8,
+      Math.min(event.clientY - offsetY, window.innerHeight - heldWindowEl.offsetHeight - 8),
+    );
+    heldWindowEl.style.left = `${left}px`;
+    heldWindowEl.style.top = `${top}px`;
+  });
+  const stopDrag = (event) => {
+    dragging = false;
+    try {
+      bar.releasePointerCapture(event.pointerId);
+    } catch {}
+  };
+  bar.addEventListener("pointerup", stopDrag);
+  bar.addEventListener("pointercancel", stopDrag);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeHeldOrderWindow();
+  });
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!heldWindowEl || heldWindowEl.classList.contains("hidden")) return;
+      if (!heldWindowEl.contains(event.target)) closeHeldOrderWindow();
+    },
+    true,
+  );
+
+  return heldWindowEl;
+}
+
+function openHeldOrderWindow(sale, x, y) {
+  hideHeldHoverPreview();
+  const el = getHeldOrderWindow();
+  heldWindowBody.innerHTML = "";
+  heldWindowBody.appendChild(buildHeldPreviewNode(sale));
+  el.classList.remove("hidden");
+
+  el.style.left = "0px";
+  el.style.top = "0px";
+  const left = Math.max(8, Math.min(x, window.innerWidth - el.offsetWidth - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - el.offsetHeight - 8));
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+}
+
+function renderHeldSales() {
+  const storeSales = heldSales.filter(
+    (sale) => heldSaleStoreId(sale) === activeStoreId,
+  );
+  heldPhotoObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  heldPhotoObjectUrls = [];
+  els.heldSalesList.innerHTML = "";
+  els.heldSalesCount.textContent = String(storeSales.length);
+
+  if (storeSales.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "held-sales-empty";
+    empty.textContent = "No sales on hold.";
+    els.heldSalesList.appendChild(empty);
+    return;
+  }
+
+  storeSales
+    .slice()
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .forEach((sale) => {
+      const card = document.createElement("article");
+      card.className = "held-sale-card";
+
+      if (sale.photos?.length) {
+        const url = URL.createObjectURL(sale.photos[0].blob);
+        heldPhotoObjectUrls.push(url);
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = `Held sale for ${sale.customer || "customer"}`;
+        image.className = "held-sale-thumb";
+        image.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          openPhotoLightbox(url);
+        });
+        card.appendChild(image);
+      }
+
+      const info = document.createElement("div");
+      info.className = "held-sale-info";
+      const name = document.createElement("strong");
+      name.textContent =
+        sale.orderIdentifier ||
+        (heldSaleStoreId(sale) === "bisarnos"
+          ? sale.customer || "Unnamed customer"
+          : "La Nova order");
+      const details = document.createElement("span");
+      const itemCount = heldSaleLines(sale).reduce((sum, line) => sum + line.qty, 0);
+      const itemSummary = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
+      details.textContent =
+        heldSaleStoreId(sale) === "bisarnos"
+          ? `${itemSummary} · ${sale.photos?.length || 0} photo${
+              sale.photos?.length === 1 ? "" : "s"
+            }`
+          : `${itemSummary} · ${formatMoney(parsePaid(sale.paid) || 0)}`;
+      info.append(name, details);
+      card.appendChild(info);
+
+      const actions = document.createElement("div");
+      actions.className = "held-sale-actions";
+      const actionData = [
+        ["Title", () => renameHeldSale(sale)],
+        ["Resume", () => resumeHeldSale(sale)],
+        [
+          "Copy log",
+          () => {
+            const text = buildHeldSaleLog(sale);
+            if (!text) {
+              setStatus("Resume this sale to finish its details.", true);
+              return;
+            }
+            copyText(text, "Held sale log copied.");
+          },
+        ],
+      ];
+      if (sale.photos?.length) {
+        actionData.push(["Copy photo", () => copyPhoto(sale.photos[0].blob)]);
+      }
+      if (heldSaleStoreId(sale) === "bisarnos") {
+        actionData.push(["Gov Form", () => openHeldGovForm(sale)]);
+      }
+      actionData.push(["Remove", () => removeHeldSale(sale.id)]);
+
+      actionData.forEach(([label, handler]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `held-sale-action${label === "Remove" ? " remove" : ""}`;
+        button.textContent = label;
+        button.addEventListener("click", handler);
+        actions.appendChild(button);
+      });
+      card.appendChild(actions);
+
+      if (heldSaleStoreId(sale) === "lanova") {
+        card.classList.add("has-preview");
+        card.addEventListener("mouseenter", () =>
+          showHeldHoverPreview(sale, card),
+        );
+        card.addEventListener("mouseleave", hideHeldHoverPreview);
+        card.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          openHeldOrderWindow(sale, event.clientX, event.clientY);
+        });
+      }
+
+      els.heldSalesList.appendChild(card);
+    });
+}
+
+async function loadHeldSales() {
+  try {
+    heldSales = await runHeldSaleTransaction("readonly", (store) => store.getAll());
+    renderHeldSales();
+  } catch {
+    setStatus("Held-sale storage is unavailable in this browser.", true);
+  }
+}
+
+async function holdCurrentSale() {
+  const state = activeState();
+  const isBisarnos = activeStoreId === "bisarnos";
+  const orderPhotos = isBisarnos ? activePhotoRecords() : [];
+  const hasDetails =
+    Object.keys(state.quantities).length > 0 ||
+    els.orderIdentifier.value.trim() ||
+    els.paid.value.trim() ||
+    orderPhotos.length > 0 ||
+    (isBisarnos &&
+      (els.customer.value.trim() ||
+        els.customerLicense.value.trim() ||
+        els.couponCode.value.trim()));
+  if (!hasDetails) {
+    setStatus("Add order details before holding it.", true);
+    return;
+  }
+
+  const sale = {
+    id: makePhotoId(),
+    storeId: activeStoreId,
+    createdAt: Date.now(),
+    employee: els.employee.value.trim(),
+    orderIdentifier: els.orderIdentifier.value.trim(),
+    customer: isBisarnos ? els.customer.value.trim() : "",
+    customerLicense: isBisarnos ? els.customerLicense.value.trim() : "",
+    couponCode: isBisarnos ? els.couponCode.value.trim() : "",
+    paid: els.paid.value,
+    paidManual: state.paidManual,
+    quantities: { ...state.quantities },
+    photos: orderPhotos.map((record) => ({ ...record })),
+  };
+
+  try {
+    await runHeldSaleTransaction("readwrite", (store) => store.put(sale));
+    for (const photo of orderPhotos) {
+      await runPhotoTransaction("readwrite", (store) => store.delete(photo.id));
+    }
+    heldSales.push(sale);
+    const heldPhotoIds = new Set(orderPhotos.map((record) => record.id));
+    photoRecords = photoRecords.filter((record) => !heldPhotoIds.has(record.id));
+    renderPhotoClipboard();
+    clearSale();
+    renderHeldSales();
+    setStatus("Order held. Ready for the next customer.");
+  } catch {
+    setStatus("Could not hold this sale.", true);
+  }
+}
+
+async function resumeHeldSale(sale) {
+  const storeId = heldSaleStoreId(sale);
+  if (storeId !== activeStoreId) return;
+  const state = storeState[storeId];
+  const isBisarnos = storeId === "bisarnos";
+  const currentPhotos = isBisarnos ? activePhotoRecords() : [];
+  const resumePhotos = isBisarnos ? sale.photos || [] : [];
+  const currentHasData =
+    Object.keys(state.quantities).length > 0 ||
+    els.orderIdentifier.value.trim() ||
+    els.paid.value.trim() ||
+    currentPhotos.length > 0 ||
+    (isBisarnos &&
+      (els.customer.value.trim() ||
+        els.customerLicense.value.trim() ||
+        els.couponCode.value.trim()));
+  if (
+    currentHasData &&
+    !window.confirm("Replace the current sale with this held sale?")
+  ) {
+    return;
+  }
+
+  try {
+    for (const photo of currentPhotos) {
+      await runPhotoTransaction("readwrite", (store) => store.delete(photo.id));
+    }
+    for (const photo of resumePhotos) {
+      await runPhotoTransaction("readwrite", (store) => store.put(photo));
+    }
+    await runHeldSaleTransaction("readwrite", (store) => store.delete(sale.id));
+
+    Object.keys(state.quantities).forEach((key) => delete state.quantities[key]);
+    Object.assign(state.quantities, sale.quantities || {});
+    state.paid = sale.paid || "";
+    state.paidManual = Boolean(sale.paidManual);
+    state.orderIdentifier = sale.orderIdentifier || "";
+    els.paid.value = state.paid;
+    els.orderIdentifier.value = state.orderIdentifier;
+    if (isBisarnos) {
+      state.customer = sale.customer || "";
+      state.customerLicense = sale.customerLicense || "";
+      state.couponCode = sale.couponCode || "";
+      els.customer.value = state.customer;
+      els.customerLicense.value = state.customerLicense;
+      els.couponCode.value = state.couponCode;
+    }
+    if (sale.employee) {
+      els.employee.value = sale.employee;
+      saveEmployee();
+    }
+    const currentPhotoIds = new Set(currentPhotos.map((record) => record.id));
+    photoRecords = photoRecords.filter(
+      (record) => !currentPhotoIds.has(record.id),
+    );
+    photoRecords.push(
+      ...resumePhotos.map((record) => ({
+        ...record,
+        storeId,
+      })),
+    );
+    renderPhotoClipboard();
+    heldSales = heldSales.filter((entry) => entry.id !== sale.id);
+    renderMenu(state.search);
+    renderHeldSales();
+    updatePreview();
+    setStatus("Held sale restored.");
+  } catch {
+    setStatus("Could not restore this held sale.", true);
+  }
+}
+
+async function removeHeldSale(id) {
+  if (!window.confirm("Remove this held sale and its saved photos?")) return;
+  try {
+    await runHeldSaleTransaction("readwrite", (store) => store.delete(id));
+    heldSales = heldSales.filter((sale) => sale.id !== id);
+    renderHeldSales();
+    setStatus("Held sale removed.");
+  } catch {
+    setStatus("Could not remove this held sale.", true);
+  }
+}
+
+async function renameHeldSale(sale) {
+  const fallbackTitle =
+    heldSaleStoreId(sale) === "bisarnos"
+      ? sale.customer || "Unnamed customer"
+      : "La Nova order";
+  const nextTitle = window.prompt(
+    "Enter a title for this held order:",
+    sale.orderIdentifier || fallbackTitle,
+  );
+  if (nextTitle == null) return;
+
+  sale.orderIdentifier = nextTitle.trim();
+  try {
+    await runHeldSaleTransaction("readwrite", (store) => store.put(sale));
+    renderHeldSales();
+    setStatus(
+      sale.orderIdentifier
+        ? "Held order title updated."
+        : "Held order title reset.",
+    );
+  } catch {
+    setStatus("Could not update this held order title.", true);
+  }
+}
+
 els.employee.addEventListener("input", () => {
   saveEmployee();
   updatePreview();
@@ -1474,6 +3876,32 @@ els.customer.addEventListener("input", () => {
 
 els.customerLicense.addEventListener("input", () => {
   activeState().customerLicense = els.customerLicense.value;
+});
+
+els.couponCode.addEventListener("input", () => {
+  const tidy = tidyCouponCode(els.couponCode.value);
+  if (els.couponCode.value !== tidy) {
+    const start = els.couponCode.selectionStart;
+    const end = els.couponCode.selectionEnd;
+    els.couponCode.value = tidy;
+    if (typeof start === "number" && typeof end === "number") {
+      els.couponCode.setSelectionRange(start, end);
+    }
+  }
+  activeState().couponCode = els.couponCode.value;
+  syncPaidFromAuto();
+  updatePreview();
+  if (!els.couponCode.value) {
+    setStatus("");
+  } else if (isKnownCouponCode(els.couponCode.value)) {
+    setStatus("Coupon code accepted.");
+  } else {
+    setStatus("Coupon code not recognised yet.", true);
+  }
+});
+
+els.orderIdentifier.addEventListener("input", () => {
+  activeState().orderIdentifier = els.orderIdentifier.value;
 });
 
 els.paid.addEventListener("input", () => {
@@ -1525,6 +3953,12 @@ els.photoInput.addEventListener("change", () => {
 
 els.clearPhotosBtn.addEventListener("click", clearPhotos);
 
+els.quickConfirmToggle.addEventListener("click", () => {
+  const open = els.quickConfirmToggle.getAttribute("aria-expanded") !== "true";
+  els.quickConfirmToggle.setAttribute("aria-expanded", String(open));
+  els.quickConfirmBody.hidden = !open;
+});
+
 els.photoLightboxClose.addEventListener("click", closePhotoLightbox);
 
 els.photoLightbox.addEventListener("pointerdown", startPhotoWindowDrag);
@@ -1543,6 +3977,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 els.copyBtn.addEventListener("click", copyLog);
+els.holdSaleBtn.addEventListener("click", holdCurrentSale);
+els.prefillGovFormBtn.addEventListener("click", openCurrentGovForm);
 els.clearBtn.addEventListener("click", () => {
   clearSale();
 });
@@ -1551,17 +3987,23 @@ els.storeButtons.forEach((btn) => {
   btn.addEventListener("click", () => switchStore(btn.dataset.store));
 });
 
-els.bisarnosLockForm.addEventListener("submit", (event) => {
-  event.preventDefault();
+function tryUnlockBisarnos() {
   const code = els.bisarnosPasscode.value.trim();
+  if (code.length < 4) return false;
   if (code !== BISARNOS_PASSCODE) {
     els.bisarnosLockError.textContent = "Wrong code.";
     els.bisarnosPasscode.select();
-    return;
+    return false;
   }
   bisarnosUnlocked = true;
   closeBisarnosLock();
   switchStore("bisarnos");
+  return true;
+}
+
+els.bisarnosLockForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  tryUnlockBisarnos();
 });
 
 els.bisarnosLockCancel.addEventListener("click", closeBisarnosLock);
@@ -1571,15 +4013,25 @@ els.bisarnosPasscode.addEventListener("input", () => {
   els.bisarnosPasscode.value = els.bisarnosPasscode.value
     .replace(/\D/g, "")
     .slice(0, 4);
+  if (els.bisarnosPasscode.value.length === 4) {
+    tryUnlockBisarnos();
+  }
 });
 
 loadEmployee();
 loadInitialStore();
+loadInventoryStock();
+requestPersistentStorage();
 applyStoreChrome();
+renderQuickConfirm();
+renderInventoryStock();
 els.customer.value = activeState().customer || "";
 els.customerLicense.value = activeState().customerLicense || "";
+els.couponCode.value = activeState().couponCode || "";
+els.orderIdentifier.value = activeState().orderIdentifier || "";
 els.paid.value = activeState().paid;
 els.search.value = activeState().search;
 renderMenu(activeState().search);
 updatePreview();
 loadPhotos();
+loadHeldSales();

@@ -3,21 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Scumbags Sale Tracker</title>
+    <title>Scumbags Sales Helper</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=32" />
   </head>
   <body>
+    <a
+      class="sitelock-badge"
+      href="https://www.sitelock.com/verify.php?site=scumsaleshelper.uk"
+      onclick="window.open('https://www.sitelock.com/verify.php?site=scumsaleshelper.uk','SiteLock','width=600,height=600,left=160,top=170'); return false;"
+    >
+      <img
+        class="sitelock-seal"
+        alt="SiteLock"
+        title="SiteLock"
+        src="https://shield.sitelock.com/shield/scumsaleshelper.uk"
+      />
+    </a>
+
     <div class="app">
       <header class="header">
         <div class="brand">
           <p class="brand-mark" id="brand-mark">LA NOVA</p>
-          <h1>Scumbags Sale Tracker</h1>
+          <h1>Scumbags Sales Helper</h1>
+        </div>
+
+        <div class="quick-copy-wrap">
+          <div id="quick-copy" class="quick-copy" aria-label="Quick copy"></div>
+          <small id="quick-copy-hint" class="quick-copy-hint hidden"
+            >Paste in game for the company advertisment.</small
+          >
         </div>
 
         <div class="store-switch" role="tablist" aria-label="Store">
@@ -45,15 +65,37 @@
       </header>
 
       <main class="layout">
+        <section
+          id="quick-confirm"
+          class="panel quick-confirm hidden"
+        >
+          <button
+            type="button"
+            id="quick-confirm-toggle"
+            class="quick-confirm-toggle"
+            aria-expanded="false"
+            aria-controls="quick-confirm-body"
+          >
+            <span>Quick confirm list</span>
+            <span class="quick-confirm-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="quick-confirm-body" class="quick-confirm-body" hidden></div>
+        </section>
+
         <section class="panel sale-panel">
-          <h2 class="panel-title">Sale details</h2>
+          <h2 class="panel-title">
+            Sale details
+            <span id="sale-details-hint" class="preview-hint hidden">
+              - PASTE ID PHOTO TO PRE FILL DETAILS.
+            </span>
+          </h2>
 
           <label class="field">
             <span>Your name (employee)</span>
             <input
               id="employee"
               type="text"
-              placeholder="e.g. Enzo Freeman"
+              placeholder="YOUR NAME"
               autocomplete="name"
             />
           </label>
@@ -79,6 +121,16 @@
           </label>
 
           <label class="field">
+            <span>Order identifier <small>(optional, held orders only)</small></span>
+            <input
+              id="order-identifier"
+              type="text"
+              placeholder="Name or short label"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="field">
             <span id="paid-label">Paid by customer</span>
             <div class="price-input">
               <span class="currency">$</span>
@@ -89,6 +141,16 @@
                 placeholder="Enter amount paid"
               />
             </div>
+          </label>
+
+          <label id="coupon-field" class="field hidden">
+            <span>Coupon code <small>(optional)</small></span>
+            <input
+              id="coupon-code"
+              type="text"
+              placeholder="Enter or scan coupon code"
+              autocomplete="off"
+            />
           </label>
 
           <div class="totals">
@@ -106,6 +168,20 @@
             <button type="button" id="copy-btn" class="btn primary">
               Copy Log to Clipboard
             </button>
+            <button
+              type="button"
+              id="hold-sale-btn"
+              class="btn hold-sale"
+            >
+              Hold sale for later
+            </button>
+            <button
+              type="button"
+              id="prefill-gov-form-btn"
+              class="btn prefill-gov-form hidden"
+            >
+              Pre-fill Gov Form
+            </button>
             <button type="button" id="clear-btn" class="btn ghost">
               Clear sale
             </button>
@@ -115,7 +191,10 @@
 
           <div class="preview-block">
             <div class="preview-header">
-              <h2 class="panel-title">Discord preview</h2>
+              <h2 class="panel-title">
+                Discord preview
+                <span class="preview-hint">- PASTE IN SALES CHANNEL IN DISCORD.</span>
+              </h2>
             </div>
             <pre id="preview" class="preview">Enter your name and select items…</pre>
           </div>
@@ -135,36 +214,109 @@
             <div id="menu" class="menu"></div>
           </section>
 
-          <aside id="photo-clipboard" class="panel photo-clipboard hidden">
-            <div class="photo-clipboard-header">
-              <h2 class="panel-title">Photo clipboard</h2>
-              <button type="button" id="clear-photos-btn" class="text-btn">
-                Clear all
-              </button>
+          <aside id="bisarnos-side" class="bisarnos-side hidden">
+            <div id="photo-clipboard" class="panel photo-clipboard">
+              <div class="photo-clipboard-header">
+                <h2 class="panel-title">Photo clipboard</h2>
+                <button type="button" id="clear-photos-btn" class="text-btn">
+                  Clear all
+                </button>
+              </div>
+              <div
+                id="photo-paste-zone"
+                class="photo-paste-zone"
+                tabindex="0"
+                role="group"
+                aria-label="Paste or add sale screenshots"
+              >
+                <strong>Paste screenshots here</strong>
+                <span>Click here and press Ctrl+V, or drag and drop</span>
+                <button type="button" id="choose-photos-btn" class="photo-choose-btn">
+                  Choose files
+                </button>
+              </div>
+              <input
+                id="photo-input"
+                class="hidden"
+                type="file"
+                accept="image/*"
+                multiple
+              />
+              <div id="photo-list" class="photo-list"></div>
+              <small class="photo-note">Right-click a photo to enlarge.</small>
             </div>
-            <div
-              id="photo-paste-zone"
-              class="photo-paste-zone"
-              tabindex="0"
-              role="group"
-              aria-label="Paste or add sale screenshots"
-            >
-              <strong>Paste screenshots here</strong>
-              <span>Click here and press Ctrl+V, or drag and drop</span>
-              <button type="button" id="choose-photos-btn" class="photo-choose-btn">
-                Choose files
-              </button>
-            </div>
-            <input
-              id="photo-input"
-              class="hidden"
-              type="file"
-              accept="image/*"
-              multiple
-            />
-            <div id="photo-list" class="photo-list"></div>
-            <small class="photo-note">Right-click a photo to enlarge.</small>
+
+            <section id="held-sales-panel" class="panel held-sales">
+              <div class="held-sales-header">
+                <h2 class="panel-title">Held sales</h2>
+                <span id="held-sales-count" class="held-sales-count">0</span>
+              </div>
+              <div id="held-sales-list" class="held-sales-list">
+                <p class="held-sales-empty">No sales on hold.</p>
+              </div>
+            </section>
           </aside>
+
+          <figure id="license-guide" class="license-guide panel hidden">
+            <img
+              src="assets/license-guide.png"
+              alt="Firearm license guide showing class stamp and attachment stamp"
+            />
+          </figure>
+
+          <details id="inventory-stock" class="inventory-stock panel hidden">
+            <summary>Inventory stock</summary>
+            <div class="inventory-stock-body">
+              <section class="inventory-cases" aria-label="Storage cases">
+                <h3>Storage cases</h3>
+                <div id="inventory-case-grid" class="inventory-case-grid">
+                  <label class="inventory-case" data-case-card="0" tabindex="0">
+                    <span>Case 1</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="0">Empty case</small>
+                    <input type="text" data-case-index="0" placeholder="Label this case" />
+                  </label>
+                  <label class="inventory-case" data-case-card="1" tabindex="0">
+                    <span>Case 2</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="1">Empty case</small>
+                    <input type="text" data-case-index="1" placeholder="Label this case" />
+                  </label>
+                  <label class="inventory-case" data-case-card="2" tabindex="0">
+                    <span>Case 3</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="2">Empty case</small>
+                    <input type="text" data-case-index="2" placeholder="Label this case" />
+                  </label>
+                  <label class="inventory-case" data-case-card="3" tabindex="0">
+                    <span>Case 4</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="3">Empty case</small>
+                    <input type="text" data-case-index="3" placeholder="Label this case" />
+                  </label>
+                  <label class="inventory-case" data-case-card="4" tabindex="0">
+                    <span>Case 5</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="4">Empty case</small>
+                    <input type="text" data-case-index="4" placeholder="Label this case" />
+                  </label>
+                  <label class="inventory-case" data-case-card="5" tabindex="0">
+                    <span>Case 6</span>
+                    <img src="assets/inventory-case.png" alt="" />
+                    <small class="inventory-case-summary" data-case-summary="5">Empty case</small>
+                    <input type="text" data-case-index="5" placeholder="Label this case" />
+                  </label>
+                </div>
+                <div class="inventory-case-assignment">
+                  <h4 id="inventory-case-assignment-title">Assign items to Case 1</h4>
+                  <div
+                    id="inventory-case-assignment-list"
+                    class="inventory-case-assignment-list"
+                  ></div>
+                </div>
+              </section>
+            </div>
+          </details>
         </div>
       </main>
     </div>
@@ -228,6 +380,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js"></script>
+    <script src="rules-data.js?v=2"></script>
+    <script src="app.js?v=52"></script>
   </body>
 </html>
